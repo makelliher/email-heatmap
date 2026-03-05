@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AFP ZIP Code Heatmap</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500;600&display=swap');
+
+:root {
+  --green:      #41693D;
+  --green-mid:  #5a8a54;
+  --green-lt:   #ABD692;
+  --gold:       #FEBD3D;
+  --gold-dk:    #c9911a;
+  --red:        #C0392B;
+  --bg:         #FFFFFF;
+  --surface:    #F6F9F5;
+  --border:     #DDE8DA;
+  --text:       #1A1A1A;
+  --muted:      #6B7B69;
+  --sidebar-w:  296px;
+}
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+html, body { height:100%; overflow:hidden; }
+body { font-family:'Barlow',sans-serif; background:var(--bg); color:var(--text); display:flex; flex-direction:column; }
+
+/* HEADER */
+header {
+  flex-shrink:0; background:var(--green); border-bottom:3px solid var(--gold);
+  padding:11px 24px; display:flex; align-items:center; gap:14px;
+  box-shadow:0 2px 10px rgba(0,0,0,.18); z-index:10;
+}
+.logo {
+  width:36px; height:36px; background:var(--gold); flex-shrink:0;
+  clip-path:polygon(50% 0%,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%);
+  display:flex; align-items:center; justify-content:center;
+}
+.logo span { font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:12px; color:var(--green); }
+.hd h1 { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:19px; color:#fff; letter-spacing:.4px; }
+.hd p  { font-size:11px; color:rgba(255,255,255,.5); margin-top:1px; }
+
+.layout { flex:1; display:flex; overflow:hidden; }
+
+/* SIDEBAR */
+.sidebar {
+  width:var(--sidebar-w); flex-shrink:0; background:var(--surface);
+  border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden;
+}
+.sb-scroll { flex:1; overflow-y:auto; padding:16px 14px; }
+.sb-scroll::-webkit-scrollbar { width:3px; }
+.sb-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+.slabel {
+  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:10.5px;
+  letter-spacing:1.6px; text-transform:uppercase; color:var(--green);
+  margin-bottom:9px; padding-bottom:5px; border-bottom:2px solid var(--gold);
+  margin-top:18px;
+}
+.slabel:first-child { margin-top:0; }
+
+/* UPLOAD */
+.upzone {
+  border:2px dashed var(--border); border-radius:9px; padding:18px 12px;
+  text-align:center; cursor:pointer; background:#fff; transition:all .2s; user-select:none;
+}
+.upzone:hover,.upzone.ov { border-color:var(--green-mid); background:rgba(65,105,61,.04); }
+.upzone .ui { font-size:26px; opacity:.4; margin-bottom:6px; }
+.upzone p { font-size:12px; color:var(--muted); line-height:1.5; }
+.upzone p strong { color:var(--green); }
+.upzone input { display:none; }
+.fmt {
+  font-size:10.5px; color:var(--muted); line-height:1.5; margin-top:8px;
+  padding:5px 8px; background:rgba(65,105,61,.05); border-radius:4px;
+  border-left:2px solid var(--green-lt);
+}
+
+/* DATASET CARDS */
+.dslist { display:flex; flex-direction:column; gap:7px; }
+.ds-empty { font-size:12px; color:var(--muted); text-align:center; padding:10px 0; }
+.dscard {
+  background:#fff; border:1.5px solid var(--border); border-radius:8px;
+  padding:9px 11px; transition:border-color .2s;
+}
+.dscard.act { border-color:var(--green-mid); }
+.dsr1 { display:flex; align-items:center; gap:7px; }
+.dsswatch { width:12px; height:12px; border-radius:3px; flex-shrink:0; border:1px solid rgba(0,0,0,.1); }
+.dsname { font-weight:600; font-size:12.5px; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dsbadge { font-size:10px; color:var(--muted); background:var(--surface); padding:2px 5px; border-radius:10px; font-weight:500; }
+.dsr2 { display:flex; align-items:center; gap:5px; margin-top:7px; }
+.togrow { display:flex; align-items:center; gap:5px; cursor:pointer; }
+.togrow span { font-size:11px; color:var(--muted); }
+.tog {
+  width:26px; height:13px; background:#ccc; border-radius:7px;
+  position:relative; transition:background .2s; cursor:pointer; flex-shrink:0;
+}
+.tog.on { background:var(--green-mid); }
+.tog::after {
+  content:''; width:9px; height:9px; background:#fff; border-radius:50%;
+  position:absolute; top:2px; left:2px; transition:left .2s; box-shadow:0 1px 2px rgba(0,0,0,.2);
+}
+.tog.on::after { left:15px; }
+.dsdel { margin-left:auto; background:none; border:none; cursor:pointer; color:#ccc; font-size:17px; line-height:1; padding:0 2px; transition:color .15s; }
+.dsdel:hover { color:var(--red); }
+.dsinfo { font-size:10px; color:var(--muted); margin-top:5px; }
+
+/* UNKNOWN ZIP BADGE */
+.unknown-badge {
+  display:inline-flex; align-items:center; gap:4px;
+  font-size:10px; color:#7a5a00; background:#fff8e1;
+  border:1px solid #FEBD3D; border-radius:4px;
+  padding:2px 6px; margin-top:5px; font-weight:500;
+}
+.unknown-badge .ub-icon { font-size:10px; }
+
+/* STATS */
+.sgrid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.scard { background:#fff; border:1px solid var(--border); border-radius:7px; padding:9px 10px; }
+.sval { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:20px; color:var(--green); line-height:1; }
+.slbl2 { font-size:9.5px; color:var(--muted); margin-top:2px; text-transform:uppercase; letter-spacing:.5px; }
+
+/* UNKNOWN SUMMARY CARD */
+.unknown-card {
+  background:#fff8e1; border:1px solid var(--gold); border-radius:7px;
+  padding:9px 11px; margin-top:7px;
+}
+.unknown-card .uc-title {
+  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:11px;
+  letter-spacing:1px; text-transform:uppercase; color:var(--gold-dk); margin-bottom:5px;
+  display:flex; align-items:center; gap:5px;
+}
+.uc-row { display:flex; justify-content:space-between; align-items:baseline; padding:2px 0; }
+.uc-ds  { font-size:11.5px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:170px; }
+.uc-cnt { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:14px; color:var(--gold-dk); }
+
+/* CONTROLS */
+.ctrl { display:flex; align-items:center; justify-content:space-between; margin-bottom:9px; }
+.ctrl label { font-size:11.5px; color:var(--muted); font-weight:500; }
+.ctrl .vl { font-size:11px; color:var(--green); font-weight:600; min-width:28px; text-align:right; }
+input[type=range] {
+  -webkit-appearance:none; width:88px; height:4px; background:var(--border); border-radius:2px; outline:none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; width:13px; height:13px;
+  border-radius:50%; background:var(--green); cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.2);
+}
+
+/* LEGEND */
+.lgitem { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:11.5px; color:var(--muted); }
+
+/* FOOTER */
+.sbfooter { padding:10px 14px; border-top:1px solid var(--border); display:flex; gap:7px; }
+.btn {
+  display:inline-flex; align-items:center; gap:5px; padding:7px 12px;
+  border-radius:6px; font-family:'Barlow',sans-serif; font-size:12px; font-weight:600;
+  cursor:pointer; border:none; transition:all .15s; white-space:nowrap;
+}
+.btn-green { background:var(--green); color:#fff; }
+.btn-green:hover { background:var(--green-mid); }
+.btn-ghost { background:transparent; color:var(--green); border:1.5px solid var(--green); }
+.btn-ghost:hover { background:rgba(65,105,61,.06); }
+
+/* MAP */
+.mapa { flex:1; position:relative; background:#fff; overflow:hidden; }
+#msvg { width:100%; height:100%; }
+.sfill { fill:#EEF4EE; stroke:#B8CCB8; stroke-width:.8px; }
+.sout  { fill:none; stroke:#41693D; stroke-width:1.2px; pointer-events:none; }
+.cline { fill:none; stroke:rgba(155,180,155,.3); stroke-width:.4px; }
+
+/* MAP BUTTONS */
+.mapbtns { position:absolute; top:14px; right:14px; display:flex; flex-direction:column; gap:5px; z-index:5; }
+.mbtn {
+  width:30px; height:30px; background:#fff; border:1px solid var(--border); border-radius:6px;
+  cursor:pointer; font-size:17px; font-weight:700; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 6px rgba(0,0,0,.08); color:var(--green); line-height:1; transition:all .15s;
+}
+.mbtn:hover { background:var(--surface); border-color:var(--green-mid); }
+
+/* TOOLTIP */
+#tip {
+  position:absolute; z-index:30; pointer-events:none;
+  background:rgba(41,69,37,.93); color:#fff; padding:7px 11px; border-radius:6px;
+  font-size:11.5px; border:1px solid var(--gold); box-shadow:0 4px 14px rgba(0,0,0,.22);
+  opacity:0; transition:opacity .12s; max-width:240px;
+}
+#tip.show { opacity:1; }
+#tip strong { display:block; color:#FEBD3D; font-size:12.5px; margin-bottom:2px; }
+
+/* EMPTY STATE */
+#empty { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; pointer-events:none; }
+#empty .ei { font-size:60px; opacity:.1; margin-bottom:14px; }
+#empty h2  { font-family:'Barlow Condensed',sans-serif; font-size:22px; font-weight:700; color:var(--green); opacity:.35; margin-bottom:6px; }
+#empty p   { font-size:13px; color:var(--muted); opacity:.6; max-width:240px; }
+
+/* STATUS BAR */
+#status {
+  position:absolute; bottom:14px; left:50%; transform:translateX(-50%);
+  background:rgba(41,69,37,.88); color:#fff; padding:5px 16px; border-radius:20px;
+  font-size:11.5px; font-weight:500; opacity:0; transition:opacity .25s;
+  pointer-events:none; z-index:20; white-space:nowrap;
+}
+#status.show { opacity:1; }
+
+/* LOADING */
+#loading { position:absolute; inset:0; background:rgba(255,255,255,.82); display:none; align-items:center; justify-content:center; z-index:50; }
+.spin { width:36px; height:36px; border:3px solid var(--border); border-top-color:var(--green); border-radius:50%; animation:sp .75s linear infinite; }
+@keyframes sp { to { transform:rotate(360deg); } }
+
+/* MODAL */
+#mbg { position:fixed; inset:0; background:rgba(0,0,0,.38); z-index:200; display:none; align-items:center; justify-content:center; }
+.modal { background:#fff; border-radius:11px; padding:26px; width:360px; box-shadow:0 20px 60px rgba(0,0,0,.22); border-top:4px solid var(--green); }
+.modal h2 { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:19px; color:var(--green); margin-bottom:6px; }
+.modal .msub { font-size:12px; color:var(--muted); margin-bottom:16px; }
+.mf { margin-bottom:13px; }
+.mf label { display:block; font-size:11px; font-weight:600; color:var(--muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.6px; }
+.mf input { width:100%; border:1.5px solid var(--border); border-radius:6px; padding:8px 11px; font-family:'Barlow',sans-serif; font-size:13.5px; outline:none; transition:border-color .2s; }
+.mf input:focus { border-color:var(--green-mid); }
+.macts { display:flex; gap:7px; justify-content:flex-end; margin-top:18px; }
+
+/* PREVIEW INFO in modal */
+.mpreview {
+  background:var(--surface); border-radius:6px; padding:10px 12px;
+  margin-bottom:14px; font-size:12px; color:var(--muted); line-height:1.7;
+}
+.mpreview strong { color:var(--text); font-weight:600; }
+.mpreview .unk { color:var(--gold-dk); font-weight:600; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span>AFP</span></div>
+  <div class="hd">
+    <h1>ZIP Code Heatmap Tool</h1>
+    <p>Americans for Prosperity · Data Visualization</p>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sb-scroll">
+
+      <div class="slabel">Datasets</div>
+      <div class="dslist" id="dslist"><div class="ds-empty">No datasets loaded yet</div></div>
+
+      <div class="slabel">Upload List</div>
+      <div class="upzone" id="upzone">
+        <div class="ui">📂</div>
+        <p><strong>Drop a file here</strong><br>or click to browse</p>
+        <input type="file" id="finput" accept=".txt,.csv,.tsv">
+      </div>
+      <div class="fmt">.txt, .csv, or .tsv — one ZIP per line, or ZIP column in a spreadsheet export. Blank rows are counted separately as "unknown."</div>
+
+      <div class="slabel">Summary</div>
+      <div class="sgrid">
+        <div class="scard"><div class="sval" id="s-tot">—</div><div class="slbl2">Total Rows</div></div>
+        <div class="scard"><div class="sval" id="s-sts">—</div><div class="slbl2">States</div></div>
+        <div class="scard"><div class="sval" id="s-pk">—</div><div class="slbl2">Peak Count</div></div>
+        <div class="scard"><div class="sval" id="s-ds">0</div><div class="slbl2">Datasets</div></div>
+      </div>
+
+      <!-- UNKNOWN ZIPS SECTION -->
+      <div id="unk-wrap" style="display:none">
+        <div class="unknown-card">
+          <div class="uc-title">⚠ ZIP Unknown / Blank</div>
+          <div id="unk-rows"></div>
+        </div>
+      </div>
+
+      <div class="slabel">Display Options</div>
+      <div class="ctrl">
+        <label>Heatmap radius</label>
+        <input type="range" id="rr" min="6" max="70" value="28">
+        <span class="vl" id="lrr">28</span>
+      </div>
+      <div class="ctrl">
+        <label>Opacity</label>
+        <input type="range" id="ro" min="15" max="100" value="68">
+        <span class="vl" id="lro">68%</span>
+      </div>
+      <div class="ctrl">
+        <label>Count labels</label>
+        <div class="tog on" id="tl" onclick="togLabels(this)"></div>
+      </div>
+      <div class="ctrl">
+        <label>County outlines</label>
+        <div class="tog" id="tc" onclick="togCounties(this)"></div>
+      </div>
+
+      <div id="lgwrap" style="display:none">
+        <div class="slabel">Legend</div>
+        <div id="lgitems"></div>
+      </div>
+
+    </div>
+    <div class="sbfooter">
+      <button class="btn btn-ghost" onclick="resetView()">↺ Reset</button>
+      <button class="btn btn-green" style="flex:1" onclick="exportPNG()">⬇ Export PNG</button>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div class="mapa" id="mapa">
+    <svg id="msvg">
+      <defs id="svgdefs"></defs>
+      <g id="mg">
+        <g id="gst"></g>
+        <g id="gco"></g>
+        <g id="gheat"></g>
+        <g id="glbl"></g>
+      </g>
+    </svg>
+    <div id="empty">
+      <div class="ei">🗺️</div>
+      <h2>Upload a ZIP list to begin</h2>
+      <p>Drop any .txt or .csv file containing ZIP codes to generate a heatmap</p>
+    </div>
+    <div id="loading"><div class="spin"></div></div>
+    <div class="mapbtns">
+      <button class="mbtn" onclick="zIn()">+</button>
+      <button class="mbtn" onclick="zOut()">−</button>
+      <button class="mbtn" onclick="resetView()" title="Fit to data">⊙</button>
+    </div>
+    <div id="tip"></div>
+    <div id="status"></div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="mbg">
+  <div class="modal">
+    <h2>Configure Dataset</h2>
+    <div class="msub" id="mpreview-sub"></div>
+    <div class="mpreview" id="mpreview"></div>
+    <div class="mf">
+      <label>Dataset Name</label>
+      <input type="text" id="mname" placeholder="e.g. Active Contacts — WI">
+    </div>
+    <div class="macts">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-green" onclick="confirmDs()">Add to Map →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────
+   AFP ZIP Heatmap · Application
+   AFP brand colors: #41693D (green), #FEBD3D (gold), #ABD692 (light green)
+───────────────────────────────────────────────────────────────── */
+
+// AFP color themes — cycling through these for multi-dataset support
+// Each dataset gets the next theme in order
+const THEMES = [
+  { name:'Green',  mid:'#41693D', grad:['#e8f5e1','#ABD692','#41693D'] },
+  { name:'Gold',   mid:'#FEBD3D', grad:['#fff8e1','#FEBD3D','#9a6e00'] },
+  { name:'Lime',   mid:'#7aaf4a', grad:['#f1f8e9','#ABD692','#3a6030'] },
+  { name:'Amber',  mid:'#e6951a', grad:['#fff3e0','#ffb74d','#bf360c'] },
+  { name:'Sage',   mid:'#5a8a54', grad:['#f0f7ee','#8bc34a','#33691e'] },
+  { name:'Honey',  mid:'#c9911a', grad:['#fdf3d0','#FEBD3D','#7a4f00'] },
+];
+
+const FIPS  = {'01':'AL','02':'AK','04':'AZ','05':'AR','06':'CA','08':'CO','09':'CT','10':'DE','11':'DC','12':'FL','13':'GA','15':'HI','16':'ID','17':'IL','18':'IN','19':'IA','20':'KS','21':'KY','22':'LA','23':'ME','24':'MD','25':'MA','26':'MI','27':'MN','28':'MS','29':'MO','30':'MT','31':'NE','32':'NV','33':'NH','34':'NJ','35':'NM','36':'NY','37':'NC','38':'ND','39':'OH','40':'OK','41':'OR','42':'PA','44':'RI','45':'SC','46':'SD','47':'TN','48':'TX','49':'UT','50':'VT','51':'VA','53':'WA','54':'WV','55':'WI','56':'WY'};
+const NAMES = {'AL':'Alabama','AK':'Alaska','AZ':'Arizona','AR':'Arkansas','CA':'California','CO':'Colorado','CT':'Connecticut','DE':'Delaware','DC':'D.C.','FL':'Florida','GA':'Georgia','HI':'Hawaii','ID':'Idaho','IL':'Illinois','IN':'Indiana','IA':'Iowa','KS':'Kansas','KY':'Kentucky','LA':'Louisiana','ME':'Maine','MD':'Maryland','MA':'Massachusetts','MI':'Michigan','MN':'Minnesota','MS':'Mississippi','MO':'Missouri','MT':'Montana','NE':'Nebraska','NV':'Nevada','NH':'New Hampshire','NJ':'New Jersey','NM':'New Mexico','NY':'New York','NC':'North Carolina','ND':'North Dakota','OH':'Ohio','OK':'Oklahoma','OR':'Oregon','PA':'Pennsylvania','RI':'Rhode Island','SC':'South Carolina','SD':'South Dakota','TN':'Tennessee','TX':'Texas','UT':'Utah','VT':'Vermont','VA':'Virginia','WA':'Washington','WV':'West Virginia','WI':'Wisconsin','WY':'Wyoming'};
+
+let zipDB = {}, geoData = null, countyData = null;
+let datasets = [];
+let pZips = null, pBlanks = 0, pUnresolved = 0, pName = '';
+let selTheme = 0, showLabels = true, showCounties = false;
+let svg, g, zoom, proj, gp;
+
+// ── INIT ─────────────────────────────────────────────────────────
+async function init() {
+  setLoad(true);
+  initSVG();
+  setupUpload();
+  setupSliders();
+  await Promise.all([loadGeo(), loadZipDB()]);
+  setLoad(false);
+}
+
+async function loadZipDB() {
+  stat('Loading ZIP database…');
+  // Try multiple CDN versions for resilience
+  const urls = [
+    'https://cdn.jsdelivr.net/npm/us-zips@2023.6.0/index.json',
+    'https://cdn.jsdelivr.net/npm/us-zips@2022.9.0/index.json',
+    'https://cdn.jsdelivr.net/npm/us-zips/index.json',
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const data = await r.json();
+      // Validate it looks right
+      if (data['53005'] || data['10001']) {
+        zipDB = data;
+        stat('ZIP database ready ✓', 2500);
+        return;
+      }
+    } catch {}
+  }
+  stat('⚠ Could not load ZIP database — check connection', 5000);
+}
+
+async function loadGeo() {
+  try {
+    const [r1, r2] = await Promise.all([
+      fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'),
+      fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json'),
+    ]);
+    geoData    = await r1.json();
+    countyData = await r2.json();
+  } catch (e) { console.error('Geo load failed', e); }
+}
+
+function initSVG() {
+  svg  = d3.select('#msvg');
+  g    = d3.select('#mg');
+  zoom = d3.zoom().scaleExtent([.3, 60]).on('zoom', e => g.attr('transform', e.transform));
+  svg.call(zoom);
+}
+
+// ── UPLOAD ───────────────────────────────────────────────────────
+function setupUpload() {
+  const z = document.getElementById('upzone');
+  const f = document.getElementById('finput');
+  z.addEventListener('click', () => f.click());
+  f.addEventListener('change', e => { if (e.target.files[0]) readFile(e.target.files[0]); f.value=''; });
+  z.addEventListener('dragover',  e => { e.preventDefault(); z.classList.add('ov'); });
+  z.addEventListener('dragleave', () => z.classList.remove('ov'));
+  z.addEventListener('drop', e => {
+    e.preventDefault(); z.classList.remove('ov');
+    if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+  });
+}
+
+function readFile(file) {
+  const rd = new FileReader();
+  rd.onload = e => {
+    const { zips, blanks, total } = parseZips(e.target.result);
+    pZips    = zips;
+    pBlanks  = blanks;
+    pName    = file.name.replace(/\.[^.]+$/,'');
+
+    // Update modal preview
+    document.getElementById('mname').value = pName;
+    document.getElementById('mpreview-sub').textContent = `${total.toLocaleString()} rows found in "${file.name}"`;
+    document.getElementById('mpreview').innerHTML =
+      `<strong>${zips.length.toLocaleString()}</strong> rows with ZIP codes<br>` +
+      (blanks > 0
+        ? `<span class="unk">⚠ ${blanks.toLocaleString()} rows with blank / unknown ZIP</span>`
+        : `<span style="color:#41693D">✓ No blank ZIP rows</span>`);
+
+    openModal();
+  };
+  rd.readAsText(file);
+}
+
+function parseZips(txt) {
+  // Normalize ALL line ending styles: \r\n, \r, \n → \n
+  const normalized = txt.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+
+  const zipRe = /\b(\d{5})(?:-\d{4})?\b/;
+  const zips   = [];
+  let blanks   = 0;
+  let total    = 0;   // total data rows (excluding header)
+  let seenHeader = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    // Detect and skip header row
+    if (!seenHeader) {
+      seenHeader = true;
+      const ll = line.toLowerCase();
+      // If the line looks like a header (no digits or says "zip"), skip it
+      if (/^(zip|zipcode|postal|code|zip_code|zip code)$/i.test(ll) || (!/\d/.test(line) && line.length > 0)) {
+        continue; // skip header
+      }
+      // Otherwise treat it as a data row (fall through)
+    }
+
+    // Count every line (including empty) as a row
+    total++;
+
+    if (line === '') {
+      blanks++;
+      continue;
+    }
+
+    const m = line.match(zipRe);
+    if (m) {
+      zips.push(m[1].padStart(5, '0'));
+    } else {
+      // Has content but no valid ZIP
+      blanks++;
+    }
+  }
+
+  return { zips, blanks, total };
+}
+
+// ── MODAL ────────────────────────────────────────────────────────
+function openModal()  { document.getElementById('mbg').style.display='flex'; }
+function closeModal() { document.getElementById('mbg').style.display='none'; pZips=null; pBlanks=0; }
+
+async function confirmDs() {
+  const name = document.getElementById('mname').value.trim() || `Dataset ${datasets.length+1}`;
+  const blanks = pBlanks;
+  const zips   = pZips;
+  closeModal();
+  if (!zips || zips.length === 0) {
+    // All blanks, nothing to map
+    alert('This file had no valid ZIP codes to map — only blank rows.');
+    return;
+  }
+
+  setLoad(true);
+  stat(`Resolving ${zips.length.toLocaleString()} ZIPs…`);
+  await new Promise(r => setTimeout(r, 20));
+
+  const { points, unresolved } = resolveZips(zips);
+
+  if (!points.length) {
+    setLoad(false);
+    alert('Could not geocode any ZIP codes.\n\nThis tool requires an internet connection on first load to download the ZIP coordinate database. Please check your connection and reload the page.');
+    return;
+  }
+
+  const theme = THEMES[datasets.length % THEMES.length];
+  datasets.push({
+    id:        Date.now(),
+    name,
+    theme,
+    total:     zips.length + blanks,   // total original rows
+    zipCount:  zips.length,
+    blanks,
+    unresolved,
+    points,
+    states:    [...new Set(points.map(p=>p.state).filter(Boolean))],
+    visible:   true,
+  });
+
+  document.getElementById('empty').style.display = 'none';
+  renderAll();
+  updateStats();
+  renderDsList();
+  renderUnknowns();
+  setLoad(false);
+
+  const skipped = blanks + unresolved;
+  stat(`"${name}" — ${points.length.toLocaleString()} ZIPs mapped${skipped ? `, ${skipped} skipped` : ''}`, 4000);
+}
+
+// ── GEOCODE ──────────────────────────────────────────────────────
+function resolveZips(zips) {
+  const freq = {};
+  for (const z of zips) freq[z] = (freq[z]||0) + 1;
+
+  const points     = [];
+  let   unresolved = 0;
+
+  for (const [zip, cnt] of Object.entries(freq)) {
+    const info = zipDB[zip];
+    if (!info) { unresolved += cnt; continue; }
+    const lat = parseFloat(info.latitude  || info.lat);
+    const lng = parseFloat(info.longitude || info.lon || info.lng);
+    if (isNaN(lat) || isNaN(lng)) { unresolved += cnt; continue; }
+    const state = info.state_abbreviation || info.state || guessState(zip);
+    points.push({ zip, lat, lng, city: info.city||'', state, count: cnt });
+  }
+
+  return { points, unresolved };
+}
+
+function guessState(z) {
+  const n = parseInt(z);
+  const map = [[35000,36999,'AL'],[99500,99999,'AK'],[85000,86999,'AZ'],[71600,72999,'AR'],[90000,96699,'CA'],[80000,81999,'CO'],[6000,6999,'CT'],[19700,19999,'DE'],[32000,34999,'FL'],[30000,31999,'GA'],[96700,96899,'HI'],[83200,83999,'ID'],[60000,62999,'IL'],[46000,47999,'IN'],[50000,52999,'IA'],[66000,67999,'KS'],[40000,42999,'KY'],[70000,71499,'LA'],[3900,4999,'ME'],[20600,21999,'MD'],[1000,2799,'MA'],[48000,49999,'MI'],[55000,56999,'MN'],[38600,39999,'MS'],[63000,65999,'MO'],[59000,59999,'MT'],[68000,69999,'NE'],[88900,89999,'NV'],[3000,3899,'NH'],[7000,8999,'NJ'],[87000,88499,'NM'],[10000,14999,'NY'],[27000,28999,'NC'],[58000,58999,'ND'],[43000,45999,'OH'],[73000,74999,'OK'],[97000,97999,'OR'],[15000,19699,'PA'],[2800,2999,'RI'],[29000,29999,'SC'],[57000,57999,'SD'],[37000,38599,'TN'],[73301,79999,'TX'],[84000,84999,'UT'],[5000,5999,'VT'],[22000,24699,'VA'],[98000,99499,'WA'],[24700,26999,'WV'],[53000,54999,'WI'],[82000,83199,'WY']];
+  for (const [a,b,s] of map) if (n>=a && n<=b) return s;
+  return '';
+}
+
+// ── RENDER MAP ───────────────────────────────────────────────────
+function renderAll() {
+  if (!geoData) return;
+  const vis = datasets.filter(d=>d.visible);
+  if (!vis.length) { clearMap(); return; }
+
+  const allPts  = vis.flatMap(d=>d.points);
+  const allAbbr = [...new Set(allPts.map(p=>p.state).filter(Boolean))];
+
+  const stFeat = topojson.feature(geoData, geoData.objects.states).features;
+  const relSt  = stFeat.filter(f => allAbbr.includes(FIPS[f.id?.toString().padStart(2,'0')]));
+  if (!relSt.length) return;
+
+  const W = document.getElementById('mapa').clientWidth;
+  const H = document.getElementById('mapa').clientHeight;
+
+  proj = d3.geoAlbersUsa().fitExtent([[50,50],[W-50,H-50]], {type:'FeatureCollection',features:relSt});
+  gp   = d3.geoPath().projection(proj);
+
+  // State fills
+  const gst = d3.select('#gst'); gst.selectAll('*').remove();
+  gst.selectAll('path.sf').data(relSt).join('path')
+    .attr('class','sf sfill').attr('d',gp)
+    .on('mouseover', (ev,f) => {
+      const ab = FIPS[f.id?.toString().padStart(2,'0')];
+      tipShow(ev, `<strong>${NAMES[ab]||ab}</strong>`);
+    })
+    .on('mousemove', tipMove).on('mouseout', tipHide);
+
+  // State outlines on top
+  gst.selectAll('path.so').data(relSt).join('path')
+    .attr('class','so sout').attr('d',gp)
+    .style('stroke-width', relSt.length===1 ? '1.6px' : '1px');
+
+  // County lines
+  d3.select('#gco').selectAll('*').remove();
+  if (showCounties && countyData) {
+    const cFeat = topojson.feature(countyData, countyData.objects.counties).features
+      .filter(f => allAbbr.includes(FIPS[(Math.floor(f.id/1000)).toString().padStart(2,'0')]));
+    d3.select('#gco').selectAll('path').data(cFeat).join('path').attr('class','cline').attr('d',gp);
+  }
+
+  // Heatmap circles
+  const hg = d3.select('#gheat'); hg.selectAll('*').remove();
+  const lg = d3.select('#glbl');  lg.selectAll('*').remove();
+  d3.select('#svgdefs').selectAll('*').remove();
+
+  const radius  = +document.getElementById('rr').value;
+  const opacity = +document.getElementById('ro').value / 100;
+
+  vis.forEach(ds => {
+    const cnts  = ds.points.map(p=>p.count);
+    const cMin  = Math.min(...cnts), cMax = Math.max(...cnts);
+    const cScale = d3.scaleSequential().domain([cMin,cMax]).interpolator(d3.interpolateRgbBasis(ds.theme.grad));
+    const rScale = d3.scaleSqrt().domain([cMin,cMax]).range([radius*.35, radius*1.7]);
+
+    ds.points.forEach(pt => {
+      const xy = proj([pt.lng, pt.lat]);
+      if (!xy) return;
+      const [x,y] = xy;
+      const r   = rScale(pt.count);
+      const col = cScale(pt.count);
+      const gid = `g${ds.id}_${pt.zip}`;
+
+      const gr = d3.select('#svgdefs').append('radialGradient')
+        .attr('id',gid).attr('cx','50%').attr('cy','50%').attr('r','50%');
+      gr.append('stop').attr('offset','0%'  ).attr('stop-color',col).attr('stop-opacity',opacity);
+      gr.append('stop').attr('offset','65%' ).attr('stop-color',col).attr('stop-opacity',opacity*.45);
+      gr.append('stop').attr('offset','100%').attr('stop-color',col).attr('stop-opacity',0);
+
+      hg.append('circle')
+        .attr('cx',x).attr('cy',y).attr('r',r)
+        .style('fill',`url(#${gid})`).style('cursor','pointer')
+        .on('mouseover', ev => {
+          tipShow(ev,
+            `<strong>${pt.city?pt.city+', ':''}${pt.state} ${pt.zip}</strong>` +
+            `${pt.count.toLocaleString()} entr${pt.count===1?'y':'ies'}<br>` +
+            `<span style="opacity:.7">${ds.name}</span>`
+          );
+          d3.select(ev.currentTarget).attr('r', r*1.12);
+        })
+        .on('mousemove', tipMove)
+        .on('mouseout',  ev => { tipHide(); d3.select(ev.currentTarget).attr('r',r); });
+
+      if (showLabels && pt.count > 1) {
+        const fs = Math.max(5, Math.min(11, r*.52));
+        lg.append('text')
+          .attr('x',x).attr('y',y).attr('text-anchor','middle').attr('dominant-baseline','middle')
+          .attr('font-size',fs).attr('font-family','Barlow,sans-serif').attr('font-weight','700')
+          .attr('fill','rgba(255,255,255,.9)').style('pointer-events','none')
+          .text(pt.count>=10000?`${(pt.count/1000).toFixed(0)}k`
+              : pt.count>=1000 ?`${(pt.count/1000).toFixed(1)}k`
+              : pt.count);
+      }
+    });
+  });
+
+  renderLegend(vis);
+  svg.transition().duration(550).call(zoom.transform, d3.zoomIdentity);
+}
+
+function clearMap() {
+  ['#gst','#gco','#gheat','#glbl'].forEach(id=>d3.select(id).selectAll('*').remove());
+  d3.select('#svgdefs').selectAll('*').remove();
+}
+
+function renderLegend(vis) {
+  const wrap  = document.getElementById('lgwrap');
+  const items = document.getElementById('lgitems');
+  items.innerHTML = '';
+  if (!vis.length) { wrap.style.display='none'; return; }
+  wrap.style.display = 'block';
+  vis.forEach(ds => {
+    const id = `lg${ds.id}`;
+    const li = document.createElement('div');
+    li.className = 'lgitem';
+    li.innerHTML = `
+      <svg width="52" height="9" style="border-radius:5px;overflow:hidden;flex-shrink:0">
+        <defs><linearGradient id="${id}">
+          ${ds.theme.grad.map((c,i)=>`<stop offset="${i*50}%" stop-color="${c}"/>`).join('')}
+        </linearGradient></defs>
+        <rect width="52" height="9" fill="url(#${id})"/>
+      </svg>
+      <span>${ds.name}</span>`;
+    items.appendChild(li);
+  });
+}
+
+// ── DATASET LIST ─────────────────────────────────────────────────
+function renderDsList() {
+  const list = document.getElementById('dslist');
+  list.innerHTML = '';
+  if (!datasets.length) { list.innerHTML='<div class="ds-empty">No datasets loaded yet</div>'; return; }
+
+  datasets.forEach(ds => {
+    const skipped = ds.blanks + ds.unresolved;
+    const c = document.createElement('div');
+    c.className = `dscard${ds.visible?' act':''}`;
+    c.id = `dsc${ds.id}`;
+    c.innerHTML = `
+      <div class="dsr1">
+        <div class="dsswatch" style="background:${ds.theme.mid}"></div>
+        <span class="dsname" title="${ds.name}">${ds.name}</span>
+        <span class="dsbadge">${ds.total.toLocaleString()}</span>
+      </div>
+      <div class="dsr2">
+        <div class="togrow" onclick="togDs(${ds.id})">
+          <div class="tog${ds.visible?' on':''}" id="dt${ds.id}"></div>
+          <span>Visible</span>
+        </div>
+        <button class="dsdel" onclick="delDs(${ds.id})">×</button>
+      </div>
+      <div class="dsinfo">${ds.states.join(', ')} · ${ds.points.length.toLocaleString()} unique ZIPs</div>
+      ${skipped > 0 ? `<div class="unknown-badge"><span class="ub-icon">⚠</span>${skipped.toLocaleString()} unknown / blank ZIPs</div>` : ''}`;
+    list.appendChild(c);
+  });
+}
+
+function togDs(id) {
+  const ds = datasets.find(d=>d.id===id); if(!ds)return;
+  ds.visible = !ds.visible;
+  document.getElementById(`dt${id}`)?.classList.toggle('on', ds.visible);
+  document.getElementById(`dsc${id}`)?.classList.toggle('act', ds.visible);
+  renderAll(); updateStats();
+}
+
+function delDs(id) {
+  datasets = datasets.filter(d=>d.id!==id);
+  renderDsList(); updateStats(); renderAll(); renderUnknowns();
+  if (!datasets.length) document.getElementById('empty').style.display='block';
+}
+
+// ── UNKNOWN ZIPS SUMMARY ─────────────────────────────────────────
+function renderUnknowns() {
+  const wrap = document.getElementById('unk-wrap');
+  const rows = document.getElementById('unk-rows');
+  rows.innerHTML = '';
+
+  const withUnknowns = datasets.filter(d => (d.blanks + d.unresolved) > 0);
+  if (!withUnknowns.length) { wrap.style.display='none'; return; }
+
+  wrap.style.display = 'block';
+  withUnknowns.forEach(ds => {
+    const total = ds.blanks + ds.unresolved;
+    const row   = document.createElement('div');
+    row.className = 'uc-row';
+    row.innerHTML = `
+      <span class="uc-ds" title="${ds.name}">${ds.name}</span>
+      <span class="uc-cnt">${total.toLocaleString()}</span>`;
+    rows.appendChild(row);
+
+    if (ds.blanks > 0 && ds.unresolved > 0) {
+      const detail = document.createElement('div');
+      detail.style.cssText = 'font-size:10px;color:#7a5a00;padding:0 0 3px 0;';
+      detail.textContent = `${ds.blanks} blank, ${ds.unresolved} unrecognized`;
+      rows.appendChild(detail);
+    }
+  });
+}
+
+// ── STATS ────────────────────────────────────────────────────────
+function updateStats() {
+  const vis  = datasets.filter(d=>d.visible).flatMap(d=>d.points);
+  const tot  = datasets.reduce((s,d)=>s+d.total, 0);
+  const sts  = [...new Set(vis.map(p=>p.state).filter(Boolean))];
+  const pk   = vis.length ? Math.max(...vis.map(p=>p.count)) : 0;
+  document.getElementById('s-tot').textContent = tot ? tot.toLocaleString() : '—';
+  document.getElementById('s-sts').textContent = sts.length || '—';
+  document.getElementById('s-pk').textContent  = pk  ? pk.toLocaleString()  : '—';
+  document.getElementById('s-ds').textContent  = datasets.length;
+}
+
+// ── SLIDERS ──────────────────────────────────────────────────────
+function setupSliders() {
+  const rr=document.getElementById('rr'), ro=document.getElementById('ro');
+  rr.addEventListener('input',()=>{ document.getElementById('lrr').textContent=rr.value; renderAll(); });
+  ro.addEventListener('input',()=>{ document.getElementById('lro').textContent=ro.value+'%'; renderAll(); });
+}
+function togLabels(el)  { el.classList.toggle('on'); showLabels=el.classList.contains('on'); renderAll(); }
+function togCounties(el){ el.classList.toggle('on'); showCounties=el.classList.contains('on'); renderAll(); }
+
+// ── ZOOM ─────────────────────────────────────────────────────────
+function zIn()       { svg.transition().duration(300).call(zoom.scaleBy,1.6); }
+function zOut()      { svg.transition().duration(300).call(zoom.scaleBy,1/1.6); }
+function resetView() { svg.transition().duration(500).call(zoom.transform,d3.zoomIdentity); }
+
+// ── TOOLTIP ──────────────────────────────────────────────────────
+const tipEl = document.getElementById('tip');
+function tipShow(ev,html){ tipEl.innerHTML=html; tipEl.classList.add('show'); tipMove(ev); }
+function tipMove(ev){
+  const r=document.getElementById('mapa').getBoundingClientRect();
+  let x=ev.clientX-r.left+14, y=ev.clientY-r.top-10;
+  if(x+230>r.width)  x=ev.clientX-r.left-220;
+  if(y+90>r.height)  y=ev.clientY-r.top-80;
+  tipEl.style.left=x+'px'; tipEl.style.top=y+'px';
+}
+function tipHide(){ tipEl.classList.remove('show'); }
+
+// ── STATUS ───────────────────────────────────────────────────────
+let stT;
+function stat(msg,ms){
+  const el=document.getElementById('status');
+  el.textContent=msg; el.classList.add('show');
+  if(stT)clearTimeout(stT);
+  if(ms)stT=setTimeout(()=>el.classList.remove('show'),ms);
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────
+function setLoad(on){ document.getElementById('loading').style.display=on?'flex':'none'; }
+
+// ── EXPORT ───────────────────────────────────────────────────────
+function exportPNG(){
+  stat('Generating export…');
+  const el=document.getElementById('msvg');
+  const W=el.clientWidth, H=el.clientHeight;
+  const clone=el.cloneNode(true);
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  clone.setAttribute('width',W); clone.setAttribute('height',H);
+  const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
+  bg.setAttribute('width',W); bg.setAttribute('height',H); bg.setAttribute('fill','#fff');
+  clone.insertBefore(bg,clone.firstChild);
+  const url='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(clone))));
+  const img=new Image();
+  img.onload=()=>{
+    const cv=document.createElement('canvas');
+    cv.width=W*2; cv.height=H*2;
+    const ctx=cv.getContext('2d');
+    ctx.scale(2,2); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H); ctx.drawImage(img,0,0);
+    const a=document.createElement('a');
+    a.download='afp-heatmap.png'; a.href=cv.toDataURL('image/png'); a.click();
+    stat('Saved ✓', 2500);
+  };
+  img.onerror=()=>stat('Export failed',3000);
+  img.src=url;
+}
+
+// ── START ────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

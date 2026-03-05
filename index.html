@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AFP ZIP Code Heatmap</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500;600&display=swap');
+:root{--green:#41693D;--green-mid:#5a8a54;--green-lt:#ABD692;--gold:#FEBD3D;--gold-dk:#c9911a;--red:#C0392B;--bg:#FFFFFF;--surface:#F6F9F5;--border:#DDE8DA;--text:#1A1A1A;--muted:#6B7B69;--sidebar-w:296px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Barlow',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+header{flex-shrink:0;background:var(--green);border-bottom:3px solid var(--gold);padding:11px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 10px rgba(0,0,0,.18);z-index:10}
+.logo{width:36px;height:36px;background:var(--gold);flex-shrink:0;clip-path:polygon(50% 0%,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%);display:flex;align-items:center;justify-content:center}
+.logo span{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:12px;color:var(--green)}
+.hd h1{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;color:#fff;letter-spacing:.4px}
+.hd p{font-size:11px;color:rgba(255,255,255,.5);margin-top:1px}
+.layout{flex:1;display:flex;overflow:hidden}
+.sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sb-scroll{flex:1;overflow-y:auto;padding:16px 14px}
+.sb-scroll::-webkit-scrollbar{width:3px}
+.sb-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.slabel{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--green);margin-bottom:9px;padding-bottom:5px;border-bottom:2px solid var(--gold);margin-top:18px}
+.slabel:first-child{margin-top:0}
+.upzone{border:2px dashed var(--border);border-radius:9px;padding:18px 12px;text-align:center;cursor:pointer;background:#fff;transition:all .2s;user-select:none}
+.upzone:hover,.upzone.ov{border-color:var(--green-mid);background:rgba(65,105,61,.04)}
+.upzone .ui{font-size:26px;opacity:.4;margin-bottom:6px}
+.upzone p{font-size:12px;color:var(--muted);line-height:1.5}
+.upzone p strong{color:var(--green)}
+.upzone input{display:none}
+.fmt{font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:8px;padding:5px 8px;background:rgba(65,105,61,.05);border-radius:4px;border-left:2px solid var(--green-lt)}
+.dslist{display:flex;flex-direction:column;gap:7px}
+.ds-empty{font-size:12px;color:var(--muted);text-align:center;padding:10px 0}
+.dscard{background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:9px 11px;transition:border-color .2s}
+.dscard.act{border-color:var(--green-mid)}
+.dsr1{display:flex;align-items:center;gap:7px}
+.dsswatch{width:12px;height:12px;border-radius:3px;flex-shrink:0;border:1px solid rgba(0,0,0,.1)}
+.dsname{font-weight:600;font-size:12.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsbadge{font-size:10px;color:var(--muted);background:var(--surface);padding:2px 5px;border-radius:10px;font-weight:500}
+.dsr2{display:flex;align-items:center;gap:5px;margin-top:7px}
+.togrow{display:flex;align-items:center;gap:5px;cursor:pointer}
+.togrow span{font-size:11px;color:var(--muted)}
+.tog{width:26px;height:13px;background:#ccc;border-radius:7px;position:relative;transition:background .2s;cursor:pointer;flex-shrink:0}
+.tog.on{background:var(--green-mid)}
+.tog::after{content:'';width:9px;height:9px;background:#fff;border-radius:50%;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.tog.on::after{left:15px}
+.dsdel{margin-left:auto;background:none;border:none;cursor:pointer;color:#ccc;font-size:17px;line-height:1;padding:0 2px;transition:color .15s}
+.dsdel:hover{color:var(--red)}
+.dsinfo{font-size:10px;color:var(--muted);margin-top:5px}
+.unknown-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#7a5a00;background:#fff8e1;border:1px solid #FEBD3D;border-radius:4px;padding:2px 6px;margin-top:5px;font-weight:500}
+.sgrid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.scard{background:#fff;border:1px solid var(--border);border-radius:7px;padding:9px 10px}
+.sval{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:20px;color:var(--green);line-height:1}
+.slbl2{font-size:9.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+.unknown-card{background:#fff8e1;border:1px solid var(--gold);border-radius:7px;padding:9px 11px;margin-top:7px}
+.unknown-card .uc-title{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--gold-dk);margin-bottom:5px;display:flex;align-items:center;gap:5px}
+.uc-row{display:flex;justify-content:space-between;align-items:baseline;padding:2px 0}
+.uc-ds{font-size:11.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px}
+.uc-cnt{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;color:var(--gold-dk)}
+.ctrl{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.ctrl label{font-size:11.5px;color:var(--muted);font-weight:500}
+.ctrl .vl{font-size:11px;color:var(--green);font-weight:600;min-width:28px;text-align:right}
+input[type=range]{-webkit-appearance:none;width:88px;height:4px;background:var(--border);border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--green);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.lgitem{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11.5px;color:var(--muted)}
+.sbfooter{padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:7px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:6px;font-family:'Barlow',sans-serif;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all .15s;white-space:nowrap}
+.btn-green{background:var(--green);color:#fff}
+.btn-green:hover{background:var(--green-mid)}
+.btn-ghost{background:transparent;color:var(--green);border:1.5px solid var(--green)}
+.btn-ghost:hover{background:rgba(65,105,61,.06)}
+.mapa{flex:1;position:relative;background:#fff;overflow:hidden}
+#msvg{width:100%;height:100%}
+.sfill{fill:#EEF4EE;stroke:#B8CCB8;stroke-width:.8px}
+.sout{fill:none;stroke:#41693D;stroke-width:1.2px;pointer-events:none}
+.cline{fill:none;stroke:rgba(155,180,155,.3);stroke-width:.4px}
+.mapbtns{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;gap:5px;z-index:5}
+.mbtn{width:30px;height:30px;background:#fff;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:17px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.08);color:var(--green);line-height:1;transition:all .15s}
+.mbtn:hover{background:var(--surface);border-color:var(--green-mid)}
+#tip{position:absolute;z-index:30;pointer-events:none;background:rgba(41,69,37,.93);color:#fff;padding:7px 11px;border-radius:6px;font-size:11.5px;border:1px solid var(--gold);box-shadow:0 4px 14px rgba(0,0,0,.22);opacity:0;transition:opacity .12s;max-width:240px}
+#tip.show{opacity:1}
+#tip strong{display:block;color:#FEBD3D;font-size:12.5px;margin-bottom:2px}
+#empty{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
+#empty .ei{font-size:60px;opacity:.1;margin-bottom:14px}
+#empty h2{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:700;color:var(--green);opacity:.35;margin-bottom:6px}
+#empty p{font-size:13px;color:var(--muted);opacity:.6;max-width:240px}
+#status{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:rgba(41,69,37,.88);color:#fff;padding:5px 16px;border-radius:20px;font-size:11.5px;font-weight:500;opacity:0;transition:opacity .25s;pointer-events:none;z-index:20;white-space:nowrap}
+#status.show{opacity:1}
+#loading{position:absolute;inset:0;background:rgba(255,255,255,.82);display:none;align-items:center;justify-content:center;z-index:50}
+.spin{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:sp .75s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+#mbg{position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:200;display:none;align-items:center;justify-content:center}
+.modal{background:#fff;border-radius:11px;padding:26px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.22);border-top:4px solid var(--green)}
+.modal h2{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;color:var(--green);margin-bottom:6px}
+.modal .msub{font-size:12px;color:var(--muted);margin-bottom:16px}
+.mf{margin-bottom:13px}
+.mf label{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.6px}
+.mf input{width:100%;border:1.5px solid var(--border);border-radius:6px;padding:8px 11px;font-family:'Barlow',sans-serif;font-size:13.5px;outline:none;transition:border-color .2s}
+.mf input:focus{border-color:var(--green-mid)}
+.macts{display:flex;gap:7px;justify-content:flex-end;margin-top:18px}
+.mpreview{background:var(--surface);border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--muted);line-height:1.7}
+.mpreview strong{color:var(--text);font-weight:600}
+.mpreview .unk{color:var(--gold-dk);font-weight:600}
+/* OFFLINE BANNER */
+#offline-banner{background:#fff8e1;border-bottom:2px solid var(--gold);padding:7px 16px;font-size:11.5px;color:#7a5a00;display:flex;align-items:center;gap:8px;flex-shrink:0}
+#offline-banner.hidden{display:none}
+#offline-banner strong{font-weight:700}
+#offline-banner a{color:var(--green);font-weight:600;cursor:pointer;text-decoration:underline}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><span>AFP</span></div>
+  <div class="hd">
+    <h1>ZIP Code Heatmap Tool</h1>
+    <p>Americans for Prosperity · Data Visualization</p>
+  </div>
+</header>
+
+<div id="offline-banner" class="hidden">
+  ⚠ <span><strong>Offline map data not available.</strong> To run fully offline, run <code>python3 afp_setup.py</code> once.
+  Currently loading map from internet — <a onclick="document.getElementById('offline-banner').classList.add('hidden')">dismiss</a></span>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sb-scroll">
+      <div class="slabel">Datasets</div>
+      <div class="dslist" id="dslist"><div class="ds-empty">No datasets loaded yet</div></div>
+      <div class="slabel">Upload List</div>
+      <div class="upzone" id="upzone">
+        <div class="ui">📂</div>
+        <p><strong>Drop a file here</strong><br>or click to browse</p>
+        <input type="file" id="finput" accept=".txt,.csv,.tsv">
+      </div>
+      <div class="fmt">.txt, .csv, or .tsv — one ZIP per line, or ZIP column in spreadsheet export. Blank rows counted as "unknown."</div>
+      <div class="slabel">Summary</div>
+      <div class="sgrid">
+        <div class="scard"><div class="sval" id="s-tot">—</div><div class="slbl2">Total Rows</div></div>
+        <div class="scard"><div class="sval" id="s-sts">—</div><div class="slbl2">States</div></div>
+        <div class="scard"><div class="sval" id="s-pk">—</div><div class="slbl2">Peak Count</div></div>
+        <div class="scard"><div class="sval" id="s-ds">0</div><div class="slbl2">Datasets</div></div>
+      </div>
+      <div id="unk-wrap" style="display:none">
+        <div class="unknown-card">
+          <div class="uc-title">⚠ ZIP Unknown / Blank</div>
+          <div id="unk-rows"></div>
+        </div>
+      </div>
+      <div class="slabel">Display Options</div>
+      <div class="ctrl"><label>Heatmap radius</label><input type="range" id="rr" min="6" max="70" value="28"><span class="vl" id="lrr">28</span></div>
+      <div class="ctrl"><label>Opacity</label><input type="range" id="ro" min="15" max="100" value="68"><span class="vl" id="lro">68%</span></div>
+      <div class="ctrl"><label>Count labels</label><div class="tog on" id="tl" onclick="togLabels(this)"></div></div>
+      <div class="ctrl"><label>County outlines</label><div class="tog" id="tc" onclick="togCounties(this)"></div></div>
+      <div id="lgwrap" style="display:none">
+        <div class="slabel">Legend</div>
+        <div id="lgitems"></div>
+      </div>
+    </div>
+    <div class="sbfooter">
+      <button class="btn btn-ghost" onclick="resetView()">↺ Reset</button>
+      <button class="btn btn-green" style="flex:1" onclick="exportPNG()">⬇ Export PNG</button>
+    </div>
+  </div>
+
+  <div class="mapa" id="mapa">
+    <svg id="msvg">
+      <defs id="svgdefs"></defs>
+      <g id="mg"><g id="gst"></g><g id="gco"></g><g id="gheat"></g><g id="glbl"></g></g>
+    </svg>
+    <div id="empty"><div class="ei">🗺️</div><h2>Upload a ZIP list to begin</h2><p>Drop any .txt or .csv file containing ZIP codes to generate a heatmap</p></div>
+    <div id="loading"><div class="spin"></div></div>
+    <div class="mapbtns">
+      <button class="mbtn" onclick="zIn()">+</button>
+      <button class="mbtn" onclick="zOut()">−</button>
+      <button class="mbtn" onclick="resetView()" title="Fit to data">⊙</button>
+    </div>
+    <div id="tip"></div>
+    <div id="status"></div>
+  </div>
+</div>
+
+<div id="mbg">
+  <div class="modal">
+    <h2>Configure Dataset</h2>
+    <div class="msub" id="mpreview-sub"></div>
+    <div class="mpreview" id="mpreview"></div>
+    <div class="mf"><label>Dataset Name</label><input type="text" id="mname" placeholder="e.g. Active Contacts — WI"></div>
+    <div class="macts">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-green" onclick="confirmDs()">Add to Map →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── INLINE DATA (offline-capable) ──────────────────────────────
+// ZIP coordinate database — 849 Wisconsin + common US ZIPs
+// Format: { "zip": [lat, lng, "City", "ST"] }
+/*INJECT_ZIPS*/
+const _OFFLINE_MODE = false;
+
+// If setup script was run, inline data above overrides CDN fetch.
+// Otherwise we fall back to CDN fetch with offline banner warning.
+const _BUILTIN_ZIPS = {"53001":[43.7636,-88.0017,"Adell","WI"],"53002":[43.3589,-88.3473,"Allenton","WI"],"53003":[43.3022,-88.5633,"Ashippun","WI"],"53004":[43.6325,-87.8836,"Belgium","WI"],"53005":[43.0516,-88.0842,"Brookfield","WI"],"53006":[43.6547,-88.4748,"Brownsville","WI"],"53007":[43.1029,-88.0718,"Butler","WI"],"53008":[43.0638,-88.1079,"Brookfield","WI"],"53010":[43.7481,-88.3208,"Campbellsport","WI"],"53011":[43.7333,-87.9592,"Cascade","WI"],"53012":[43.3631,-88.0198,"Cedarburg","WI"],"53013":[43.6486,-87.9097,"Cedar Grove","WI"],"53014":[44.0694,-88.0408,"Chilton","WI"],"53015":[44.0583,-87.7764,"Cleveland","WI"],"53016":[43.3986,-88.6897,"Clyman","WI"],"53017":[43.2281,-88.2292,"Colgate","WI"],"53018":[43.0561,-88.2958,"Delafield","WI"],"53019":[43.7069,-88.2125,"Eden","WI"],"53020":[43.9047,-88.0019,"Elkhart Lake","WI"],"53021":[43.5208,-87.8969,"Fredonia","WI"],"53022":[43.2369,-88.1267,"Germantown","WI"],"53023":[43.8458,-88.0278,"Glenbeulah","WI"],"53024":[43.3872,-87.9178,"Grafton","WI"],"53025":[43.9861,-88.0458,"Greenbush","WI"],"53026":[43.8986,-88.3475,"Hingham","WI"],"53027":[43.3014,-88.4325,"Hartford","WI"],"53029":[43.1372,-88.3319,"Hartland","WI"],"53030":[43.4308,-88.625,"Hustisford","WI"],"53031":[43.7597,-87.8328,"Kewaskum","WI"],"53032":[43.5253,-88.5733,"Juneau","WI"],"53033":[43.2119,-88.2958,"Lannon","WI"],"53034":[43.3819,-88.5569,"Lomira","WI"],"53035":[43.4542,-88.5003,"Iron Ridge","WI"],"53036":[43.2708,-88.6972,"Ixonia","WI"],"53037":[43.2917,-88.1597,"Jackson","WI"],"53038":[43.2458,-88.7653,"Johnson Creek","WI"],"53039":[43.4681,-88.7264,"Kekoskee","WI"],"53040":[43.5972,-88.3361,"Kewaskum","WI"],"53042":[44.0069,-87.9525,"Kiel","WI"],"53044":[43.7486,-87.7028,"Kohler","WI"],"53045":[43.0644,-88.1486,"Brookfield","WI"],"53046":[43.1939,-88.2069,"Lannon","WI"],"53047":[43.3664,-88.7028,"Lebanon","WI"],"53048":[43.6736,-88.4194,"Lomira","WI"],"53049":[43.9236,-88.2142,"Malone","WI"],"53050":[43.5417,-88.3553,"Mayville","WI"],"53051":[43.1519,-88.0664,"Menomonee Falls","WI"],"53052":[43.1797,-88.1053,"Menomonee Falls","WI"],"53057":[43.9711,-88.2814,"Mount Calvary","WI"],"53058":[43.1211,-88.3847,"Nashotah","WI"],"53059":[43.4417,-88.8069,"Neosho","WI"],"53061":[43.9625,-88.0847,"New Holstein","WI"],"53062":[43.9625,-88.0847,"New Holstein","WI"],"53063":[44.1344,-87.8753,"Newton","WI"],"53064":[43.1578,-88.2275,"North Lake","WI"],"53065":[43.8228,-88.5328,"Oakfield","WI"],"53066":[43.1069,-88.4297,"Oconomowoc","WI"],"53069":[43.1206,-88.4914,"Okauchee","WI"],"53070":[43.8978,-87.8786,"Oostburg","WI"],"53072":[43.0872,-88.3178,"Pewaukee","WI"],"53073":[43.7472,-87.9364,"Plymouth","WI"],"53074":[43.5325,-87.8642,"Port Washington","WI"],"53075":[43.5983,-88.0025,"Random Lake","WI"],"53076":[43.2286,-88.3167,"Richfield","WI"],"53078":[43.3831,-88.3472,"Rubicon","WI"],"53079":[43.9531,-88.1594,"Saint Anna","WI"],"53080":[43.3994,-87.9028,"Saukville","WI"],"53081":[43.7508,-87.7208,"Sheboygan","WI"],"53082":[43.7508,-87.7208,"Sheboygan","WI"],"53083":[43.7942,-87.7472,"Sheboygan Falls","WI"],"53085":[43.8214,-87.9414,"Sheboygan Falls","WI"],"53086":[43.3011,-88.2683,"Slinger","WI"],"53088":[44.1758,-88.0353,"St. Nazianz","WI"],"53089":[43.1072,-88.2539,"Sussex","WI"],"53090":[43.4228,-88.1236,"West Bend","WI"],"53091":[43.5394,-88.1553,"Theresa","WI"],"53092":[43.2447,-87.9661,"Thiensville","WI"],"53093":[43.8556,-87.9611,"Waldo","WI"],"53094":[43.3617,-88.7372,"Watertown","WI"],"53095":[43.4053,-88.1825,"West Bend","WI"],"53097":[43.2219,-88.0703,"Mequon","WI"],"53098":[43.4267,-88.7242,"Watertown","WI"],"53099":[43.4319,-88.6278,"Watertown","WI"],"53101":[42.5472,-88.2678,"Bassett","WI"],"53102":[42.5136,-87.9803,"Benet Lake","WI"],"53103":[42.9022,-88.0961,"Big Bend","WI"],"53104":[42.5578,-87.8392,"Bristol","WI"],"53105":[42.6789,-88.2272,"Burlington","WI"],"53108":[42.7436,-87.9442,"Caledonia","WI"],"53109":[42.6472,-88.4469,"Camp Lake","WI"],"53110":[42.8981,-87.9072,"Cudahy","WI"],"53114":[42.5742,-88.5564,"Darien","WI"],"53115":[42.6933,-88.6453,"Delavan","WI"],"53118":[43.0236,-88.4783,"Dousman","WI"],"53119":[42.9617,-88.4747,"Eagle","WI"],"53120":[42.6756,-88.5339,"East Troy","WI"],"53121":[42.7047,-88.5269,"Elkhorn","WI"],"53122":[43.0561,-88.1361,"Elm Grove","WI"],"53125":[42.5769,-88.4742,"Fontana","WI"],"53126":[42.8422,-87.9564,"Franksville","WI"],"53127":[42.9753,-88.3583,"Genesee Depot","WI"],"53128":[42.5503,-88.3572,"Genoa City","WI"],"53129":[42.9592,-87.9731,"Greendale","WI"],"53130":[42.9561,-88.0086,"Hales Corners","WI"],"53132":[42.8881,-87.9714,"Franklin","WI"],"53137":[43.0875,-88.6572,"Helenville","WI"],"53138":[42.6033,-88.3639,"Lake Geneva","WI"],"53139":[42.7281,-88.1258,"Kansasville","WI"],"53140":[42.5931,-87.8278,"Kenosha","WI"],"53141":[42.5931,-87.8278,"Kenosha","WI"],"53142":[42.5625,-87.8903,"Kenosha","WI"],"53143":[42.5797,-87.8656,"Kenosha","WI"],"53144":[42.5519,-87.8308,"Kenosha","WI"],"53146":[42.9758,-88.1689,"New Berlin","WI"],"53147":[42.6003,-88.5542,"Lake Geneva","WI"],"53148":[42.6033,-88.5375,"Genoa City","WI"],"53149":[42.9047,-88.3797,"Mukwonago","WI"],"53150":[42.8861,-88.0836,"Muskego","WI"],"53151":[42.9831,-88.1097,"New Berlin","WI"],"53152":[42.5581,-88.3231,"New Munster","WI"],"53153":[42.9869,-88.3097,"North Prairie","WI"],"53154":[42.9053,-87.9136,"Oak Creek","WI"],"53156":[43.0356,-88.6089,"Palmyra","WI"],"53157":[42.5758,-88.4281,"Pell Lake","WI"],"53158":[42.5392,-87.8542,"Pleasant Prairie","WI"],"53159":[42.5461,-88.3114,"Powers Lake","WI"],"53168":[42.5728,-88.2147,"Salem","WI"],"53170":[42.6314,-88.2447,"Silver Lake","WI"],"53172":[42.9211,-87.8944,"South Milwaukee","WI"],"53176":[42.6944,-88.3997,"Springfield","WI"],"53177":[42.6558,-87.8786,"Sturtevant","WI"],"53178":[43.0572,-88.5114,"Sullivan","WI"],"53179":[42.5292,-87.9014,"Trevor","WI"],"53181":[42.5628,-88.2692,"Twin Lakes","WI"],"53182":[42.6644,-88.1183,"Union Grove","WI"],"53183":[43.0086,-88.4258,"Wales","WI"],"53184":[42.5917,-88.6122,"Walworth","WI"],"53185":[42.7747,-88.2131,"Waterford","WI"],"53186":[43.0103,-88.2369,"Waukesha","WI"],"53187":[43.0103,-88.2369,"Waukesha","WI"],"53188":[43.0294,-88.2747,"Waukesha","WI"],"53189":[43.0469,-88.2781,"Waukesha","WI"],"53190":[42.8422,-88.6928,"Whitewater","WI"],"53191":[42.5681,-88.5692,"Williams Bay","WI"],"53192":[42.5142,-88.2903,"Wilmot","WI"],"53193":[42.8528,-88.6219,"Whitewater","WI"],"53194":[42.5278,-88.2417,"Woodworth","WI"],"53195":[42.5369,-88.5528,"Zenda","WI"],"53201":[43.04,-87.95,"Milwaukee","WI"],"53202":[43.0561,-87.8994,"Milwaukee","WI"],"53203":[43.04,-87.9169,"Milwaukee","WI"],"53204":[43.0231,-87.9333,"Milwaukee","WI"],"53205":[43.0519,-87.9489,"Milwaukee","WI"],"53206":[43.0719,-87.9436,"Milwaukee","WI"],"53207":[42.9981,-87.8978,"Milwaukee","WI"],"53208":[43.0461,-87.9747,"Milwaukee","WI"],"53209":[43.1181,-87.9736,"Milwaukee","WI"],"53210":[43.0736,-87.9931,"Milwaukee","WI"],"53211":[43.0778,-87.8864,"Milwaukee","WI"],"53212":[43.0797,-87.9094,"Milwaukee","WI"],"53213":[43.0572,-88.0086,"Wauwatosa","WI"],"53214":[43.0281,-88.0219,"West Allis","WI"],"53215":[43.0025,-87.9467,"Milwaukee","WI"],"53216":[43.0892,-87.9936,"Milwaukee","WI"],"53217":[43.1311,-87.9064,"Milwaukee","WI"],"53218":[43.1058,-87.9936,"Milwaukee","WI"],"53219":[43.0053,-87.9847,"West Allis","WI"],"53220":[42.9806,-87.98,"Milwaukee","WI"],"53221":[42.9647,-87.9264,"Milwaukee","WI"],"53222":[43.0789,-88.0261,"Milwaukee","WI"],"53223":[43.1358,-87.9642,"Milwaukee","WI"],"53224":[43.1497,-88.0108,"Milwaukee","WI"],"53225":[43.1072,-88.0317,"Milwaukee","WI"],"53226":[43.0686,-88.0386,"Wauwatosa","WI"],"53227":[43.0003,-88.0514,"West Allis","WI"],"53228":[42.9806,-88.0372,"Greenfield","WI"],"53233":[43.0367,-87.9433,"Milwaukee","WI"],"53235":[42.9803,-87.8839,"St. Francis","WI"],"53402":[42.7342,-87.8317,"Racine","WI"],"53403":[42.7189,-87.8333,"Racine","WI"],"53404":[42.7517,-87.8542,"Racine","WI"],"53405":[42.7167,-87.8869,"Racine","WI"],"53406":[42.7336,-87.9256,"Racine","WI"],"53501":[42.5822,-89.3978,"Afton","WI"],"53502":[42.6911,-89.4375,"Albany","WI"],"53503":[43.0308,-90.0997,"Arena","WI"],"53504":[42.6697,-89.9036,"Argyle","WI"],"53505":[42.6597,-88.8375,"Avalon","WI"],"53506":[43.0769,-90.2869,"Avoca","WI"],"53507":[43.0086,-89.8992,"Barneveld","WI"],"53508":[42.8953,-89.5472,"Belleville","WI"],"53510":[42.5789,-90.3408,"Belmont","WI"],"53511":[42.5058,-89.0367,"Beloit","WI"],"53512":[42.5058,-89.0367,"Beloit","WI"],"53515":[43.1806,-89.7369,"Black Earth","WI"],"53516":[42.5803,-89.9222,"Blanchardville","WI"],"53517":[43.0875,-89.8386,"Blue Mounds","WI"],"53518":[43.5417,-90.5558,"Blue River","WI"],"53519":[42.6492,-89.3825,"Brooklyn","WI"],"53520":[42.5947,-89.4819,"Brodhead","WI"],"53521":[42.8033,-89.4286,"Brooklyn","WI"],"53522":[42.5447,-89.8014,"Browntown","WI"],"53523":[43.0594,-89.0453,"Cambridge","WI"],"53525":[42.5314,-88.8519,"Clinton","WI"],"53526":[42.9436,-89.8181,"Cobb","WI"],"53527":[43.0636,-89.1064,"Cottage Grove","WI"],"53528":[43.1322,-89.6483,"Cross Plains","WI"],"53529":[43.2453,-89.7019,"Dane","WI"],"53530":[42.5261,-89.9394,"Darlington","WI"],"53531":[43.0297,-89.0797,"Deerfield","WI"],"53532":[43.1886,-89.3114,"DeForest","WI"],"53533":[42.8469,-90.1336,"Dodgeville","WI"],"53534":[42.9678,-89.1153,"Edgerton","WI"],"53535":[42.9869,-90.2539,"Edmund","WI"],"53536":[42.7919,-89.3819,"Evansville","WI"],"53537":[42.5931,-89.2358,"Footville","WI"],"53538":[43.0853,-88.8531,"Fort Atkinson","WI"],"53540":[43.2553,-90.1664,"Gotham","WI"],"53541":[42.5539,-90.1336,"Gratiot","WI"],"53542":[42.5914,-88.9342,"Janesville","WI"],"53543":[42.8728,-90.0714,"Highland","WI"],"53544":[42.9014,-89.9356,"Hollandale","WI"],"53545":[42.6767,-89.0108,"Janesville","WI"],"53546":[42.6972,-88.9889,"Janesville","WI"],"53547":[42.6972,-88.9889,"Janesville","WI"],"53548":[42.7192,-89.0511,"Janesville","WI"],"53549":[43.0492,-88.8228,"Jefferson","WI"],"53550":[42.5903,-89.7733,"Juda","WI"],"53551":[43.1103,-88.9747,"Lake Mills","WI"],"53553":[43.0014,-90.1742,"Linden","WI"],"53554":[42.9414,-90.3272,"Livingston","WI"],"53555":[43.3375,-89.3839,"Lodi","WI"],"53556":[43.3675,-90.2708,"Lone Rock","WI"],"53557":[43.5503,-88.8994,"Lowell","WI"],"53558":[43.1036,-89.2814,"McFarland","WI"],"53559":[43.2022,-89.0358,"Marshall","WI"],"53560":[43.2444,-89.5939,"Mazomanie","WI"],"53561":[43.3489,-89.6625,"Merrimac","WI"],"53562":[43.1397,-89.5053,"Middleton","WI"],"53563":[42.7478,-88.9792,"Milton","WI"],"53565":[42.8903,-90.1672,"Mineral Point","WI"],"53566":[42.6878,-89.7653,"Monroe","WI"],"53569":[42.9394,-90.4667,"Montfort","WI"],"53570":[42.7103,-89.7342,"Monticello","WI"],"53571":[43.2172,-89.2181,"Morrisonville","WI"],"53572":[43.0575,-89.7369,"Mount Horeb","WI"],"53573":[43.1878,-90.2122,"Muscoda","WI"],"53574":[42.6681,-89.6375,"New Glarus","WI"],"53575":[42.9228,-89.3525,"Oregon","WI"],"53576":[42.5642,-89.1556,"Orfordville","WI"],"53577":[43.3706,-90.0581,"Plain","WI"],"53578":[43.3892,-89.5322,"Prairie du Sac","WI"],"53579":[43.3611,-88.8692,"Reeseville","WI"],"53580":[42.7192,-90.1408,"Rewey","WI"],"53581":[43.3786,-90.3806,"Richland Center","WI"],"53582":[43.0186,-89.9192,"Ridgeway","WI"],"53583":[43.3553,-89.7208,"Sauk City","WI"],"53584":[43.4678,-90.4197,"Sextonville","WI"],"53585":[42.5678,-88.7264,"Sharon","WI"],"53586":[42.5208,-89.7819,"Shullsburg","WI"],"53587":[42.5769,-89.8739,"South Wayne","WI"],"53588":[43.4069,-90.1578,"Spring Green","WI"],"53589":[42.9728,-89.2311,"Stoughton","WI"],"53590":[43.1467,-89.2092,"Sun Prairie","WI"],"53593":[43.0853,-89.5772,"Verona","WI"],"53594":[43.2136,-88.9644,"Waterloo","WI"],"53595":[42.9406,-89.7311,"Mineral Point","WI"],"53596":[43.2092,-89.1869,"Windsor","WI"],"53597":[43.2342,-89.6811,"Waunakee","WI"],"53598":[43.2172,-89.2767,"Windsor","WI"],"53599":[42.5869,-89.5281,"Woodford","WI"],"53701":[43.0731,-89.4012,"Madison","WI"],"53702":[43.0731,-89.4012,"Madison","WI"],"53703":[43.0872,-89.3667,"Madison","WI"],"53704":[43.1197,-89.3464,"Madison","WI"],"53705":[43.0825,-89.4719,"Madison","WI"],"53706":[43.0761,-89.4108,"Madison","WI"],"53707":[43.0731,-89.4012,"Madison","WI"],"53708":[43.0731,-89.4012,"Madison","WI"],"53711":[43.0461,-89.4492,"Madison","WI"],"53713":[43.0306,-89.3908,"Madison","WI"],"53714":[43.1036,-89.3286,"Madison","WI"],"53715":[43.0542,-89.4025,"Madison","WI"],"53716":[43.0781,-89.3247,"Madison","WI"],"53717":[43.0886,-89.5142,"Madison","WI"],"53718":[43.1169,-89.2819,"Madison","WI"],"53719":[43.0425,-89.4939,"Madison","WI"],"53726":[43.0731,-89.4012,"Madison","WI"],"53744":[43.0731,-89.4012,"Madison","WI"],"53792":[43.0761,-89.4108,"Madison","WI"],"53901":[43.4622,-89.0458,"Portage","WI"],"53910":[43.7133,-90.0167,"Adams","WI"],"53911":[43.2406,-89.3733,"Arlington","WI"],"53913":[43.4547,-89.7722,"Baraboo","WI"],"53916":[43.4686,-88.8361,"Beaver Dam","WI"],"53919":[43.7336,-88.5897,"Brandon","WI"],"53920":[43.6342,-89.5819,"Briggsville","WI"],"53922":[43.4817,-88.6558,"Burnett","WI"],"53923":[43.5953,-89.0447,"Cambria","WI"],"53924":[43.6078,-90.3256,"Cazenovia","WI"],"53925":[43.3317,-89.0875,"Columbus","WI"],"53926":[43.6228,-89.0911,"Dalton","WI"],"53927":[43.8578,-90.1789,"Dellwood","WI"],"53928":[43.6025,-89.2069,"Doylestown","WI"],"53929":[43.8781,-90.3181,"Elroy","WI"],"53930":[43.6831,-89.4936,"Endeavor","WI"],"53931":[43.7706,-88.7194,"Fairwater","WI"],"53932":[43.3894,-89.1908,"Fall River","WI"],"53933":[43.7214,-88.7861,"Fox Lake","WI"],"53934":[44.0244,-89.8178,"Friendship","WI"],"53935":[43.4747,-88.9897,"Friesland","WI"],"53936":[43.9528,-89.7058,"Grand Marsh","WI"],"53937":[43.6561,-90.1656,"Hillpoint","WI"],"53939":[43.7583,-89.1069,"Horicon","WI"],"53940":[43.6878,-90.07,"Hustler","WI"],"53941":[43.6714,-90.1786,"Ironton","WI"],"53942":[43.5983,-90.1789,"La Valle","WI"],"53943":[43.5614,-89.9378,"Lime Ridge","WI"],"53944":[43.8122,-90.1256,"Lindina","WI"],"53946":[43.7069,-88.9308,"Lohrville","WI"],"53947":[43.8553,-89.0908,"Markesan","WI"],"53948":[43.9281,-90.1086,"Mauston","WI"],"53949":[43.7869,-89.2836,"Montello","WI"],"53950":[43.9831,-90.3814,"New Lisbon","WI"],"53951":[43.4517,-90.0028,"North Freedom","WI"],"53952":[43.9417,-89.4644,"Oxford","WI"],"53953":[43.7856,-89.4747,"Packwaukee","WI"],"53954":[43.4658,-89.2972,"Pardeeville","WI"],"53955":[43.3872,-89.3533,"Poynette","WI"],"53956":[43.5192,-88.8369,"Randolph","WI"],"53957":[43.5108,-89.1361,"Randolph","WI"],"53958":[43.5561,-89.7756,"Reedsburg","WI"],"53959":[43.5453,-89.9394,"Reedsburg","WI"],"53960":[43.2706,-89.1039,"Rio","WI"],"53961":[43.5556,-90.0119,"Rock Springs","WI"],"53962":[43.7736,-90.3847,"Wonewoc","WI"],"53963":[43.57,-88.7325,"Waupun","WI"],"53964":[43.8833,-89.65,"Westfield","WI"],"53965":[43.44,-89.5097,"Wisconsin Dells","WI"],"53968":[43.7614,-90.4153,"Wonewoc","WI"],"53969":[43.5069,-88.9781,"Wyocena","WI"],"54001":[45.4139,-92.4564,"Amery","WI"],"54002":[44.9286,-92.5439,"Baldwin","WI"],"54003":[44.6708,-92.5375,"Bay City","WI"],"54004":[45.2158,-92.4256,"Clayton","WI"],"54005":[45.2131,-92.1483,"Clear Lake","WI"],"54006":[45.6014,-92.5392,"Cushing","WI"],"54007":[45.1344,-92.3172,"Deer Park","WI"],"54009":[45.4789,-92.3222,"Dresser","WI"],"54010":[45.2681,-92.3478,"Ellsworth","WI"],"54011":[44.7681,-92.6147,"Elmwood","WI"],"54012":[45.0019,-92.6119,"Glenwood City","WI"],"54013":[45.1183,-92.3028,"Hertel","WI"],"54014":[44.6294,-92.3994,"Hager City","WI"],"54015":[44.8469,-92.6306,"Hammond","WI"],"54016":[44.9944,-92.7764,"Hudson","WI"],"54017":[45.1064,-92.7172,"New Richmond","WI"],"54020":[45.5278,-92.4219,"Osceola","WI"],"54021":[44.7114,-92.7681,"Prescott","WI"],"54022":[44.9547,-92.7194,"River Falls","WI"],"54023":[44.9808,-92.5417,"Roberts","WI"],"54024":[45.5783,-92.6803,"Saint Croix Falls","WI"],"54025":[45.0503,-92.5361,"Somerset","WI"],"54026":[45.2931,-92.0739,"Star Prairie","WI"],"54027":[44.7589,-92.0014,"Spring Valley","WI"],"54028":[45.0678,-92.1769,"Wilson","WI"],"54082":[44.9931,-92.8714,"Lakeland","WI"],"54101":[44.8006,-88.0483,"Abrams","WI"],"54102":[45.3431,-88.0619,"Amberg","WI"],"54103":[45.5628,-88.4578,"Armstrong Creek","WI"],"54104":[45.3994,-88.6281,"Athelstane","WI"],"54106":[44.4411,-88.4769,"Bear Creek","WI"],"54107":[44.5181,-88.4183,"Bonduel","WI"],"54110":[44.2181,-88.1214,"Brillion","WI"],"54111":[44.6681,-88.5614,"Cecil","WI"],"54112":[45.1139,-88.0528,"Coleman","WI"],"54113":[44.3681,-88.4781,"Combined Locks","WI"],"54114":[45.6781,-88.1428,"Crivitz","WI"],"54115":[44.3378,-88.0881,"De Pere","WI"],"54119":[45.4781,-88.4303,"Dunbar","WI"],"54120":[45.84,-88.58,"Fence","WI"],"54121":[45.8239,-88.2972,"Florence","WI"],"54123":[44.2214,-88.0414,"Forest Junction","WI"],"54124":[44.9469,-88.1283,"Gillett","WI"],"54125":[45.7669,-88.4956,"Goodman","WI"],"54126":[44.33,-87.9789,"Greenleaf","WI"],"54127":[44.8206,-88.3028,"Green Valley","WI"],"54128":[44.6833,-88.6503,"Gresham","WI"],"54129":[44.1403,-88.2183,"Hilbert","WI"],"54130":[44.2739,-88.3711,"Kaukauna","WI"],"54135":[44.6928,-88.5567,"Keshena","WI"],"54136":[44.2958,-88.3158,"Kimberly","WI"],"54137":[44.5803,-88.3519,"Lena","WI"],"54138":[44.9294,-88.6422,"Lily","WI"],"54139":[44.3753,-87.9608,"Loomis","WI"],"54140":[44.28,-88.4197,"Little Chute","WI"],"54141":[44.5753,-87.9769,"Little Suamico","WI"],"54143":[45.1047,-87.6319,"Marinette","WI"],"54149":[44.9244,-88.4522,"Mountain","WI"],"54150":[44.5456,-88.5206,"Neopit","WI"],"54151":[45.4639,-87.6708,"Niagara","WI"],"54152":[44.4681,-88.1664,"Nichols","WI"],"54153":[44.5625,-87.8536,"Oconto","WI"],"54154":[44.8678,-88.1469,"Oconto Falls","WI"],"54155":[44.3978,-88.0867,"Oneida","WI"],"54156":[45.5439,-88.0778,"Pembine","WI"],"54157":[44.9808,-87.9347,"Peshtigo","WI"],"54159":[44.8956,-87.7775,"Porterfield","WI"],"54160":[44.1864,-88.1061,"Potter","WI"],"54161":[45.3342,-87.9481,"Pound","WI"],"54162":[44.5928,-88.0394,"Pulaski","WI"],"54165":[44.4483,-88.3314,"Seymour","WI"],"54166":[44.7861,-88.6428,"Shawano","WI"],"54169":[44.3303,-88.1597,"Sherwood","WI"],"54170":[44.7033,-88.7533,"Tigerton","WI"],"54171":[44.6597,-87.9194,"Sobieski","WI"],"54173":[44.5289,-87.9542,"Suamico","WI"],"54174":[44.7703,-88.3042,"Suring","WI"],"54175":[45.4,-88.7519,"Townsend","WI"],"54177":[45.1033,-87.6406,"Marinette","WI"],"54180":[44.2094,-88.0308,"Wrightstown","WI"],"54201":[44.5653,-87.5883,"Algoma","WI"],"54202":[45.0597,-86.9572,"Baileys Harbor","WI"],"54204":[44.4661,-87.5653,"Brussels","WI"],"54205":[44.3853,-87.6472,"Casco","WI"],"54206":[44.2281,-87.7528,"Cleveland","WI"],"54207":[44.2158,-87.7417,"Collins","WI"],"54208":[44.3925,-87.8664,"Denmark","WI"],"54209":[45.2381,-86.9667,"Egg Harbor","WI"],"54210":[45.3758,-86.9003,"Ellison Bay","WI"],"54211":[45.2261,-87.0181,"Ephraim","WI"],"54212":[45.1831,-87.0028,"Fish Creek","WI"],"54213":[44.5817,-87.4933,"Forestville","WI"],"54214":[44.3011,-87.7356,"Francis Creek","WI"],"54215":[44.2106,-87.7722,"Gibson","WI"],"54216":[44.5953,-87.5156,"Kewaunee","WI"],"54217":[44.4661,-87.7053,"Luxemburg","WI"],"54220":[44.1086,-87.6567,"Manitowoc","WI"],"54221":[44.1086,-87.6567,"Manitowoc","WI"],"54227":[44.1806,-87.6636,"Maribel","WI"],"54228":[44.2239,-87.9106,"Mishicot","WI"],"54229":[44.4953,-87.8386,"New Franken","WI"],"54230":[44.2681,-87.8164,"Reedsville","WI"],"54232":[44.1283,-87.7856,"Saint Nazianz","WI"],"54234":[45.1156,-87.0086,"Sister Bay","WI"],"54235":[44.5544,-87.5619,"Sturgeon Bay","WI"],"54240":[44.2033,-87.7197,"Tisch Mills","WI"],"54241":[44.2153,-87.5806,"Two Rivers","WI"],"54245":[44.2272,-87.9681,"Valders","WI"],"54246":[45.3903,-86.9125,"Washington Island","WI"],"54247":[44.2914,-87.8031,"Whitelaw","WI"],"54301":[44.4803,-88.0161,"Green Bay","WI"],"54302":[44.4928,-88.0003,"Green Bay","WI"],"54303":[44.5156,-88.0381,"Green Bay","WI"],"54304":[44.4878,-88.0853,"Green Bay","WI"],"54305":[44.5019,-88.0164,"Green Bay","WI"],"54306":[44.5019,-88.0164,"Green Bay","WI"],"54307":[44.5019,-88.0164,"Green Bay","WI"],"54308":[44.5019,-88.0164,"Green Bay","WI"],"54311":[44.4606,-87.9869,"Green Bay","WI"],"54313":[44.5519,-88.0847,"Green Bay","WI"],"54401":[44.9633,-89.6458,"Wausau","WI"],"54402":[44.9633,-89.6458,"Wausau","WI"],"54403":[44.9633,-89.6458,"Wausau","WI"],"54404":[44.8178,-90.0756,"Auburndale","WI"],"54405":[44.7528,-90.4358,"Abbotsford","WI"],"54406":[44.7158,-89.3656,"Amherst","WI"],"54407":[44.7092,-89.3603,"Amherst Junction","WI"],"54408":[44.9522,-89.4056,"Aniwa","WI"],"54409":[45.0931,-89.1033,"Antigo","WI"],"54410":[44.6156,-90.3133,"Arpin","WI"],"54411":[44.9197,-90.1506,"Athens","WI"],"54412":[44.7217,-89.9994,"Auburndale","WI"],"54413":[44.4297,-90.1378,"Babcock","WI"],"54414":[45.01,-89.0203,"Birnamwood","WI"],"54415":[44.7394,-90.0308,"Blenker","WI"],"54416":[44.8792,-88.8792,"Bowler","WI"],"54417":[45.0781,-89.6833,"Brokaw","WI"],"54418":[45.3528,-88.9139,"Bryant","WI"],"54420":[44.6558,-90.4828,"Chili","WI"],"54421":[44.7844,-90.2917,"Colby","WI"],"54422":[44.79,-90.3417,"Colby","WI"],"54423":[44.5678,-89.1814,"Custer","WI"],"54424":[45.3417,-89.1419,"Deerbrook","WI"],"54425":[44.8831,-90.3169,"Dorchester","WI"],"54426":[44.9517,-90.0781,"Edgar","WI"],"54427":[44.9281,-89.2311,"Eland","WI"],"54428":[45.5253,-89.2542,"Elcho","WI"],"54429":[44.7694,-89.2492,"Elderon","WI"],"54430":[45.2753,-88.9914,"Elton","WI"],"54433":[45.2008,-91.3231,"Gilman","WI"],"54434":[45.4003,-90.4519,"Gleason","WI"],"54435":[45.2117,-89.7272,"Gleason","WI"],"54436":[44.7319,-90.4578,"Granton","WI"],"54437":[44.5769,-90.6214,"Greenwood","WI"],"54440":[44.7706,-89.5667,"Hatley","WI"],"54441":[44.5781,-90.2033,"Hewitt","WI"],"54442":[45.3978,-89.8583,"Irma","WI"],"54443":[44.5708,-89.4253,"Junction City","WI"],"54446":[44.8272,-90.3939,"Loyal","WI"],"54447":[44.9844,-90.6456,"Lublin","WI"],"54448":[44.9539,-89.5186,"Marathon","WI"],"54449":[44.6889,-90.1703,"Marshfield","WI"],"54450":[45.0722,-88.9689,"Mattoon","WI"],"54451":[44.6394,-90.3694,"Medford","WI"],"54452":[45.1972,-89.6333,"Merrill","WI"],"54454":[44.6822,-89.7381,"Milladore","WI"],"54455":[44.8814,-89.7025,"Mosinee","WI"],"54456":[44.6544,-90.5083,"Neillsville","WI"],"54457":[44.4492,-90.0442,"Nekoosa","WI"],"54458":[44.5506,-89.3061,"Nelsonville","WI"],"54459":[45.4356,-90.1808,"Ogema","WI"],"54460":[45.0211,-90.4461,"Owen","WI"],"54462":[45.5117,-89.1339,"Pearson","WI"],"54463":[45.4278,-89.2736,"Pelican Lake","WI"],"54464":[45.1697,-88.7514,"Phlox","WI"],"54465":[45.5142,-88.9764,"Pickerel","WI"],"54466":[44.4792,-90.2094,"Pittsville","WI"],"54467":[44.6639,-89.5231,"Plover","WI"],"54469":[44.5317,-89.8494,"Port Edwards","WI"],"54470":[45.3297,-90.2294,"Rib Lake","WI"],"54471":[44.9028,-89.6597,"Rothschild","WI"],"54472":[44.9028,-89.6597,"Rothschild","WI"],"54473":[44.7056,-89.4131,"Rosholt","WI"],"54474":[44.8697,-89.8494,"Rothschild","WI"],"54475":[44.4519,-89.8283,"Rudolph","WI"],"54476":[44.9783,-89.6372,"Schofield","WI"],"54479":[44.7853,-90.2742,"Spencer","WI"],"54480":[45.2994,-90.5006,"Stetsonville","WI"],"54481":[44.5239,-89.5736,"Stevens Point","WI"],"54482":[44.5511,-89.5019,"Stevens Point","WI"],"54484":[44.6825,-89.8453,"Stratford","WI"],"54485":[45.3664,-89.1058,"Summit Lake","WI"],"54486":[44.6561,-89.0933,"Tigerton","WI"],"54487":[45.3644,-89.7461,"Tomahawk","WI"],"54488":[44.7725,-90.3169,"Unity","WI"],"54489":[44.4811,-90.0258,"Vesper","WI"],"54490":[45.4169,-90.5756,"Westboro","WI"],"54491":[45.1356,-88.7361,"White Lake","WI"],"54492":[44.5236,-89.5736,"Stevens Point","WI"],"54493":[44.7108,-90.5381,"Willard","WI"],"54494":[44.3853,-89.8344,"Wisconsin Rapids","WI"],"54495":[44.3853,-89.8344,"Wisconsin Rapids","WI"],"54498":[44.7744,-90.4819,"Withee","WI"],"54499":[44.7119,-89.1564,"Wittenberg","WI"],"54501":[45.1178,-89.1403,"Antigo","WI"],"54511":[45.6764,-89.7339,"Argonne","WI"],"54512":[46.0758,-89.6683,"Boulder Junction","WI"],"54513":[45.5386,-90.4706,"Brantwood","WI"],"54514":[46.4081,-90.6322,"Butternut","WI"],"54515":[45.4731,-90.3697,"Catawba","WI"],"54517":[46.4194,-91.1478,"Clam Lake","WI"],"54519":[46.0939,-89.2614,"Conover","WI"],"54520":[45.5539,-89.0097,"Crandon","WI"],"54521":[46.0028,-89.2339,"Eagle River","WI"],"54524":[45.7961,-90.2233,"Fifield","WI"],"54525":[46.4778,-90.1789,"Gile","WI"],"54526":[45.6833,-90.7619,"Glen Flora","WI"],"54527":[46.3472,-90.7289,"Glidden","WI"],"54529":[45.8181,-89.7186,"Harshaw","WI"],"54530":[45.7344,-90.5683,"Hawkins","WI"],"54531":[45.7581,-89.5022,"Hazelhurst","WI"],"54532":[45.7514,-89.3897,"Heafford Junction","WI"],"54534":[46.6564,-90.3839,"Hurley","WI"],"54536":[46.4694,-90.3028,"Iron Belt","WI"],"54537":[45.6236,-90.1069,"Kennan","WI"],"54538":[46.1,-89.7972,"Land O Lakes","WI"],"54539":[45.9039,-89.4494,"Lake Tomahawk","WI"],"54540":[46.1789,-89.6789,"Lac du Flambeau","WI"],"54541":[45.6958,-88.7194,"Laona","WI"],"54542":[45.8708,-88.6528,"Long Lake","WI"],"54543":[45.7458,-89.8494,"Mc Naughton","WI"],"54545":[46.0736,-90.4306,"Mercer","WI"],"54546":[46.4258,-90.6583,"Mellen","WI"],"54547":[46.1939,-90.1383,"Minocqua","WI"],"54548":[45.9119,-89.6597,"Minocqua","WI"],"54550":[46.4881,-90.3231,"Montreal","WI"],"54552":[46.0231,-90.5481,"Park Falls","WI"],"54554":[46.1144,-89.1394,"Phelps","WI"],"54555":[45.6203,-90.4114,"Phillips","WI"],"54556":[45.5458,-90.2639,"Prentice","WI"],"54557":[46.1208,-89.7886,"Presque Isle","WI"],"54558":[46.0047,-89.7497,"Saint Germain","WI"],"54559":[46.5317,-90.4192,"Saxon","WI"],"54560":[46.0922,-89.4667,"Sayner","WI"],"54561":[46.1703,-89.2894,"Star Lake","WI"],"54562":[45.7217,-89.1028,"Three Lakes","WI"],"54563":[45.5428,-90.7281,"Trego","WI"],"54564":[45.8961,-89.9122,"Tomahawk","WI"],"54565":[46.4869,-90.4503,"Upson","WI"],"54566":[45.4933,-88.7464,"White Lake","WI"],"54568":[45.9906,-89.4117,"Woodruff","WI"],"54601":[43.8225,-91.24,"La Crosse","WI"],"54602":[43.8225,-91.24,"La Crosse","WI"],"54603":[43.8386,-91.2983,"La Crosse","WI"],"54610":[44.3133,-92.0519,"Alma","WI"],"54611":[44.4994,-91.0258,"Alma Center","WI"],"54612":[44.2578,-91.4153,"Arcadia","WI"],"54613":[43.9667,-90.0233,"Arkdale","WI"],"54614":[43.9492,-91.1183,"Bangor","WI"],"54615":[44.3858,-90.8228,"Black River Falls","WI"],"54616":[44.2978,-91.3139,"Blair","WI"],"54618":[44.0097,-90.4711,"Camp Douglas","WI"],"54619":[43.9231,-90.5639,"Cashton","WI"],"54620":[44.0736,-91.3078,"Cataract","WI"],"54621":[43.6936,-91.0783,"Chaseburg","WI"],"54622":[44.3253,-91.8872,"Cochrane","WI"],"54623":[43.7919,-91.1806,"Coon Valley","WI"],"54624":[43.6528,-91.2961,"De Soto","WI"],"54625":[44.0769,-91.4469,"Dodge","WI"],"54626":[43.5658,-90.9258,"Eastman","WI"],"54627":[44.1653,-91.2603,"Ettrick","WI"],"54628":[43.5514,-91.0092,"Ferryville","WI"],"54629":[44.2611,-91.7256,"Fountain City","WI"],"54630":[43.8967,-91.0989,"Galesville","WI"],"54631":[43.6,-90.9,"Gays Mills","WI"],"54632":[43.6578,-91.0069,"Genoa","WI"],"54634":[43.8942,-90.7431,"Hillsboro","WI"],"54635":[44.4078,-91.2469,"Hixton","WI"],"54636":[43.9736,-91.2614,"Holmen","WI"],"54637":[43.9653,-90.2978,"Hustler","WI"],"54638":[43.9481,-90.4928,"Kendall","WI"],"54639":[43.7781,-90.7653,"La Farge","WI"],"54640":[43.9281,-91.0581,"Lemonweir","WI"],"54641":[43.9494,-90.3183,"Lyndon Station","WI"],"54642":[44.1736,-91.0486,"Melrose","WI"],"54643":[44.2431,-90.5917,"Millston","WI"],"54644":[43.9608,-91.1936,"Mindoro","WI"],"54645":[43.5619,-90.8667,"Mount Sterling","WI"],"54646":[43.9694,-90.2053,"Necedah","WI"],"54648":[43.9408,-90.6592,"Norwalk","WI"],"54649":[43.9839,-90.5478,"Ontario","WI"],"54650":[43.8986,-91.2156,"Onalaska","WI"],"54651":[43.8942,-90.6572,"Ontario","WI"],"54652":[43.7278,-90.8858,"Readstown","WI"],"54653":[43.9697,-90.5056,"Rockland","WI"],"54654":[43.5358,-90.8244,"Seneca","WI"],"54655":[43.7394,-90.7942,"Soldiers Grove","WI"],"54656":[43.9572,-90.7531,"Sparta","WI"],"54657":[43.5561,-90.9244,"Steuben","WI"],"54658":[43.7839,-91.0153,"Stoddard","WI"],"54659":[44.2986,-91.0561,"Taylor","WI"],"54660":[44.0219,-90.5044,"Tomah","WI"],"54661":[44.0569,-91.6336,"Trempealeau","WI"],"54662":[43.9864,-90.3722,"Tunnel City","WI"],"54664":[43.7592,-90.8742,"Viola","WI"],"54665":[43.5656,-90.9008,"Viroqua","WI"],"54666":[44.0728,-90.4192,"Warrens","WI"],"54667":[43.6594,-90.9269,"Westby","WI"],"54669":[43.9583,-91.2481,"West Salem","WI"],"54670":[43.9097,-90.5772,"Wilton","WI"],"54701":[44.795,-91.5083,"Eau Claire","WI"],"54702":[44.795,-91.5083,"Eau Claire","WI"],"54703":[44.795,-91.5083,"Eau Claire","WI"],"54720":[44.8408,-91.4606,"Altoona","WI"],"54721":[44.5719,-92.1022,"Arkansaw","WI"],"54722":[44.7242,-91.1569,"Augusta","WI"],"54723":[44.5653,-92.3042,"Bay City","WI"],"54724":[45.0858,-91.7178,"Bloomer","WI"],"54725":[45.15,-91.8803,"Bloomer","WI"],"54726":[44.95,-91.3222,"Boyd","WI"],"54727":[44.9339,-91.2383,"Cadott","WI"],"54728":[45.2503,-91.3819,"Chetek","WI"],"54729":[44.9761,-91.3344,"Chippewa Falls","WI"],"54730":[45.0072,-91.7844,"Colfax","WI"],"54731":[45.3806,-91.1503,"Couderay","WI"],"54732":[45.0742,-91.1539,"Cornell","WI"],"54733":[45.2131,-91.7019,"Dallas","WI"],"54734":[44.7383,-92.0347,"Downing","WI"],"54735":[44.9675,-92.0458,"Downsville","WI"],"54736":[44.5933,-92.0878,"Durand","WI"],"54737":[44.7194,-91.9528,"Elk Mound","WI"],"54738":[44.6369,-91.5256,"Eleva","WI"],"54739":[44.6461,-91.4544,"Elk Mound","WI"],"54740":[44.6253,-92.1367,"Elmwood","WI"],"54741":[44.6792,-90.9822,"Fairchild","WI"],"54742":[44.7667,-91.3044,"Fall Creek","WI"],"54743":[44.5856,-91.2508,"Gilmanton","WI"],"54745":[45.0939,-91.0783,"Holcombe","WI"],"54746":[44.5664,-90.8828,"Humbird","WI"],"54747":[44.5239,-91.4878,"Independence","WI"],"54748":[45.1703,-91.4803,"Jim Falls","WI"],"54749":[44.9783,-92.0783,"Knapp","WI"],"54750":[44.5844,-92.2189,"Maiden Rock","WI"],"54751":[44.7781,-91.9047,"Menomonie","WI"],"54754":[44.4858,-91.1317,"Merrillan","WI"],"54755":[44.5183,-91.5708,"Mondovi","WI"],"54756":[44.4386,-91.7131,"Nelson","WI"],"54757":[45.2103,-91.2061,"New Auburn","WI"],"54758":[44.5611,-91.2392,"Osseo","WI"],"54759":[44.4539,-92.1256,"Pepin","WI"],"54760":[44.5631,-91.3722,"Pigeon Falls","WI"],"54761":[44.5214,-92.1703,"Plum City","WI"],"54762":[45.1631,-91.8736,"Prairie Farm","WI"],"54763":[45.3733,-92.0058,"Rice Lake","WI"],"54766":[44.7217,-90.7339,"Sheldon","WI"],"54767":[44.7358,-92.1958,"Spring Valley","WI"],"54768":[45.1567,-90.8478,"Stanley","WI"],"54769":[44.5169,-92.2858,"Stockholm","WI"],"54770":[44.5903,-91.6303,"Strum","WI"],"54771":[45.2508,-91.0711,"Thorp","WI"],"54772":[45.3319,-91.9022,"Rice Lake","WI"],"54773":[44.4661,-91.2878,"Whitehall","WI"],"54801":[45.8928,-91.9178,"Spooner","WI"],"54805":[45.6119,-91.9203,"Almena","WI"],"54806":[46.5722,-90.8717,"Ashland","WI"],"54810":[45.4778,-92.2736,"Balsam Lake","WI"],"54812":[45.49,-91.8647,"Barron","WI"],"54813":[45.6311,-92.0803,"Barronett","WI"],"54814":[46.7781,-90.8233,"Bayfield","WI"],"54816":[46.7256,-91.3256,"Benoit","WI"],"54817":[45.7956,-91.5781,"Birchwood","WI"],"54819":[45.5342,-91.3178,"Bruce","WI"],"54820":[46.5,-91.3831,"Cable","WI"],"54821":[46.4556,-91.2722,"Clam Lake","WI"],"54822":[45.6042,-91.7642,"Cameron","WI"],"54824":[45.5447,-92.4244,"Centuria","WI"],"54826":[45.4297,-91.7781,"Chetek","WI"],"54827":[46.9164,-90.9178,"Cornucopia","WI"],"54828":[45.9558,-91.1631,"Couderay","WI"],"54829":[45.5578,-92.1769,"Cumberland","WI"],"54830":[46.1711,-92.1394,"Danbury","WI"],"54832":[45.7894,-91.3036,"Drummond","WI"],"54835":[45.9544,-91.4917,"Exeland","WI"],"54836":[46.6208,-92.0011,"Foxboro","WI"],"54837":[45.3989,-92.4378,"Frederic","WI"],"54838":[46.5156,-91.7717,"Gordon","WI"],"54839":[46.4522,-91.5406,"Grand View","WI"],"54840":[45.7578,-92.3981,"Grantsburg","WI"],"54841":[45.5861,-91.2356,"Haugen","WI"],"54842":[46.4617,-91.7839,"Hayward","WI"],"54843":[45.9875,-91.4781,"Hayward","WI"],"54844":[46.7756,-90.7386,"Herbster","WI"],"54845":[45.8214,-92.1469,"Hertel","WI"],"54846":[46.6544,-90.6022,"High Bridge","WI"],"54847":[46.2822,-91.2317,"Iron River","WI"],"54848":[45.4956,-91.1319,"Ladysmith","WI"],"54849":[46.5183,-91.6481,"Lake Nebagamon","WI"],"54850":[46.6583,-90.5236,"La Pointe","WI"],"54853":[45.38,-92.3058,"Luck","WI"],"54854":[46.5267,-91.6047,"Maple","WI"],"54855":[46.375,-90.8836,"Marengo","WI"],"54856":[46.5189,-91.1736,"Mason","WI"],"54857":[45.5783,-91.8703,"Mikana","WI"],"54858":[45.4189,-92.4567,"Milltown","WI"],"54859":[46.0369,-91.6667,"Minong","WI"],"54861":[46.5897,-90.7547,"Odanah","WI"],"54862":[45.8981,-91.3361,"Ojibwa","WI"],"54864":[46.5778,-91.7028,"Poplar","WI"],"54865":[46.7542,-90.9406,"Port Wing","WI"],"54867":[45.9869,-91.8456,"Radisson","WI"],"54868":[45.5056,-91.7192,"Rice Lake","WI"],"54870":[45.8269,-91.8006,"Sarona","WI"],"54871":[45.9072,-91.7736,"Shell Lake","WI"],"54872":[45.8289,-91.8753,"Shell Lake","WI"],"54873":[46.3458,-91.5581,"Solon Springs","WI"],"54874":[46.6308,-91.9614,"South Range","WI"],"54875":[45.9006,-92.005,"Spooner","WI"],"54876":[45.8386,-91.4506,"Spooner","WI"],"54880":[46.7225,-92.1192,"Superior","WI"],"54888":[45.9297,-91.9581,"Trego","WI"],"54889":[45.4786,-92.1578,"Turtle Lake","WI"],"54891":[46.7711,-90.9456,"Washburn","WI"],"54893":[45.7744,-92.2819,"Webster","WI"],"54895":[45.4769,-91.4978,"Weyerhaeuser","WI"],"54896":[45.8997,-90.9469,"Winter","WI"],"54901":[44.0253,-88.5519,"Oshkosh","WI"],"54902":[43.9897,-88.5483,"Oshkosh","WI"],"54903":[44.0253,-88.5519,"Oshkosh","WI"],"54904":[44.0453,-88.5003,"Oshkosh","WI"],"54906":[44.0253,-88.5519,"Oshkosh","WI"],"54911":[44.2656,-88.4094,"Appleton","WI"],"54912":[44.2656,-88.4094,"Appleton","WI"],"54913":[44.3181,-88.3753,"Appleton","WI"],"54914":[44.2617,-88.4583,"Appleton","WI"],"54915":[44.2583,-88.3906,"Appleton","WI"],"54919":[44.3578,-88.5567,"Bear Creek","WI"],"54921":[44.2508,-89.3456,"Almond","WI"],"54922":[44.6358,-88.9506,"Aniwa","WI"],"54923":[43.9747,-88.9553,"Berlin","WI"],"54926":[44.5761,-88.8886,"Big Falls","WI"],"54927":[44.0947,-88.5514,"Butte des Morts","WI"],"54928":[44.8242,-88.9803,"Caroline","WI"],"54929":[44.8028,-88.8628,"Cecil","WI"],"54930":[43.9853,-89.0317,"Coloma","WI"],"54931":[44.2892,-88.6256,"Embarrass","WI"],"54932":[43.8281,-88.8256,"Eureka","WI"],"54933":[44.7617,-88.9178,"Farmington","WI"],"54934":[43.8711,-88.6419,"Fond du Lac","WI"],"54935":[43.7733,-88.4428,"Fond du Lac","WI"],"54936":[43.7733,-88.4428,"Fond du Lac","WI"],"54937":[43.7733,-88.4428,"Fond du Lac","WI"],"54940":[44.2422,-88.8314,"Fremont","WI"],"54941":[43.8525,-88.7056,"Green Lake","WI"],"54942":[44.2917,-88.4219,"Greenville","WI"],"54943":[43.9683,-89.2556,"Hancock","WI"],"54944":[44.2519,-88.6028,"Hortonville","WI"],"54945":[44.6153,-89.0564,"Iola","WI"],"54946":[44.3822,-89.0961,"King","WI"],"54947":[44.2092,-88.5875,"Kaukauna","WI"],"54948":[44.7556,-88.9281,"Leopolis","WI"],"54949":[44.4378,-88.9561,"Manawa","WI"],"54950":[44.8167,-88.9878,"Marion","WI"],"54952":[44.2081,-88.4272,"Menasha","WI"],"54956":[44.1981,-88.4533,"Neenah","WI"],"54957":[44.1981,-88.4533,"Neenah","WI"],"54960":[43.9681,-89.0681,"Neshkoro","WI"],"54961":[44.5142,-88.6392,"New London","WI"],"54962":[44.5833,-89.0017,"Ogdensburg","WI"],"54963":[44.0811,-88.7175,"Omro","WI"],"54964":[43.9203,-88.7556,"Oshkosh","WI"],"54965":[44.2722,-88.8953,"Pella","WI"],"54966":[44.2417,-89.5025,"Plainfield","WI"],"54967":[44.1944,-88.7908,"Poy Sippi","WI"],"54968":[43.9939,-89.1056,"Princeton","WI"],"54969":[44.4658,-88.7264,"Readfield","WI"],"54970":[43.9258,-89.0228,"Redgranite","WI"],"54971":[43.8778,-88.5414,"Ripon","WI"],"54974":[43.9078,-88.6339,"Rosendale","WI"],"54976":[44.3869,-89.0544,"Saxeville","WI"],"54977":[44.5519,-89.1181,"Scandinavia","WI"],"54978":[44.8472,-88.9289,"Tigerton","WI"],"54979":[43.8833,-88.4967,"Van Dyne","WI"],"54980":[44.0767,-88.4481,"Omro","WI"],"54981":[44.3678,-89.1144,"Waupaca","WI"],"54982":[43.9969,-89.1528,"Wautoma","WI"],"54983":[44.4558,-88.8822,"Weyauwega","WI"],"54984":[44.2414,-89.2856,"Wild Rose","WI"],"54985":[44.1556,-88.4947,"Winneconne","WI"],"54986":[44.1564,-88.7369,"Winnebago","WI"],"54990":[44.5028,-88.8997,"Iola","WI"],"52641":[40.9714,-91.5467,"Mount Pleasant","IA"],"53732":[43.0731,-89.4012,"Madison","WI"],"53801":[42.9381,-90.9417,"Boscobel","WI"],"53805":[43.0958,-90.6806,"Fennimore","WI"],"53809":[42.8317,-90.6933,"Lancaster","WI"],"53813":[42.86,-90.7917,"Lancaster","WI"],"53818":[42.9758,-90.5833,"Prairie du Chien","WI"],"53820":[42.9333,-90.9333,"Wyalusing","WI"],"53821":[43.0286,-91.1431,"Prairie du Chien","WI"],"53832":[43.0,-90.6833,"Dickeyville","WI"],"54072":[45.3239,-92.0119,"Dresser","WI"],"54697":[44.0508,-90.9853,"Wilton","WI"],"61414":[41.3658,-90.1783,"Aledo","IL"],"63951":[36.9614,-90.2658,"Ellsinore","MO"],"68154":[41.2625,-96.1533,"Omaha","NE"],"78114":[29.3039,-97.9281,"Floresville","TX"],"80102":[39.85,-104.3167,"Bennett","CO"],"85268":[33.5833,-111.7833,"Fountain Hills","AZ"]};
+
+// ── CONSTANTS ──────────────────────────────────────────────────
+const THEMES = [
+  {name:"Green", mid:"#41693D", grad:["#e8f5e1","#ABD692","#41693D"]},
+  {name:"Gold",  mid:"#FEBD3D", grad:["#fff8e1","#FEBD3D","#9a6e00"]},
+  {name:"Lime",  mid:"#7aaf4a", grad:["#f1f8e9","#ABD692","#3a6030"]},
+  {name:"Amber", mid:"#e6951a", grad:["#fff3e0","#ffb74d","#bf360c"]},
+  {name:"Sage",  mid:"#5a8a54", grad:["#f0f7ee","#8bc34a","#33691e"]},
+  {name:"Honey", mid:"#c9911a", grad:["#fdf3d0","#FEBD3D","#7a4f00"]},
+];
+
+const FIPS  = {"01":"AL","02":"AK","04":"AZ","05":"AR","06":"CA","08":"CO","09":"CT","10":"DE","11":"DC","12":"FL","13":"GA","15":"HI","16":"ID","17":"IL","18":"IN","19":"IA","20":"KS","21":"KY","22":"LA","23":"ME","24":"MD","25":"MA","26":"MI","27":"MN","28":"MS","29":"MO","30":"MT","31":"NE","32":"NV","33":"NH","34":"NJ","35":"NM","36":"NY","37":"NC","38":"ND","39":"OH","40":"OK","41":"OR","42":"PA","44":"RI","45":"SC","46":"SD","47":"TN","48":"TX","49":"UT","50":"VT","51":"VA","53":"WA","54":"WV","55":"WI","56":"WY"};
+const NAMES = {"AL":"Alabama","AK":"Alaska","AZ":"Arizona","AR":"Arkansas","CA":"California","CO":"Colorado","CT":"Connecticut","DE":"Delaware","DC":"D.C.","FL":"Florida","GA":"Georgia","HI":"Hawaii","ID":"Idaho","IL":"Illinois","IN":"Indiana","IA":"Iowa","KS":"Kansas","KY":"Kentucky","LA":"Louisiana","ME":"Maine","MD":"Maryland","MA":"Massachusetts","MI":"Michigan","MN":"Minnesota","MS":"Mississippi","MO":"Missouri","MT":"Montana","NE":"Nebraska","NV":"Nevada","NH":"New Hampshire","NJ":"New Jersey","NM":"New Mexico","NY":"New York","NC":"North Carolina","ND":"North Dakota","OH":"Ohio","OK":"Oklahoma","OR":"Oregon","PA":"Pennsylvania","RI":"Rhode Island","SC":"South Carolina","SD":"South Dakota","TN":"Tennessee","TX":"Texas","UT":"Utah","VT":"Vermont","VA":"Virginia","WA":"Washington","WV":"West Virginia","WI":"Wisconsin","WY":"Wyoming"};
+
+let zipDB = {}, geoData = null, countyData = null;
+let datasets = [], pZips = null, pBlanks = 0, pName = "";
+let showLabels = true, showCounties = false;
+let svg, g, zoom, proj, gp;
+
+// ── INIT ───────────────────────────────────────────────────────
+async function init() {
+  setLoad(true);
+  initSVG();
+  setupUpload();
+  setupSliders();
+  await loadData();
+  setLoad(false);
+}
+
+async function loadData() {
+  // If offline setup was run, inline data is already available
+  if (_OFFLINE_MODE) {
+    zipDB    = _ZIPS_DATA;
+    geoData  = _STATES_DATA;
+    countyData = _COUNTIES_DATA;
+    stat("Offline mode — all data embedded ✓", 3000);
+    return;
+  }
+
+  // Otherwise: use built-in WI ZIPs first, then try CDN upgrade
+  zipDB = _BUILTIN_ZIPS;
+  stat("Built-in ZIP data ready (849 ZIPs). Loading full dataset…");
+
+  // Try to load full map data from CDN
+  const geoOk = await loadGeo();
+  const zipOk = await loadFullZips();
+
+  if (!geoOk || !zipOk) {
+    document.getElementById("offline-banner").classList.remove("hidden");
+    stat("Using built-in data. Run afp_setup.py for full offline support.", 6000);
+  } else {
+    stat("All data loaded ✓", 2500);
+  }
+}
+
+async function loadGeo() {
+  try {
+    const [r1, r2] = await Promise.all([
+      fetch("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"),
+      fetch("https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json"),
+    ]);
+    if (!r1.ok || !r2.ok) return false;
+    geoData    = await r1.json();
+    countyData = await r2.json();
+    return true;
+  } catch { return false; }
+}
+
+async function loadFullZips() {
+  try {
+    const urls = [
+      "https://cdn.jsdelivr.net/npm/us-zips@2023.6.0/index.json",
+      "https://cdn.jsdelivr.net/npm/us-zips@2022.9.0/index.json",
+    ];
+    for (const url of urls) {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const data = await r.json();
+      // Normalize format
+      const sample = Object.values(data)[0];
+      if (Array.isArray(sample)) {
+        zipDB = data; // already [lat,lng,city,state]
+      } else if (sample && typeof sample === "object") {
+        const norm = {};
+        for (const [z, v] of Object.entries(data)) {
+          const lat = parseFloat(v.latitude || v.lat || 0);
+          const lng = parseFloat(v.longitude || v.lon || v.lng || 0);
+          norm[z] = [lat, lng, v.city || "", v.state_abbreviation || v.state || ""];
+        }
+        zipDB = norm;
+      }
+      return true;
+    }
+    return false;
+  } catch { return false; }
+}
+
+function initSVG() {
+  svg  = d3.select("#msvg");
+  g    = d3.select("#mg");
+  zoom = d3.zoom().scaleExtent([.3,60]).on("zoom", e => g.attr("transform", e.transform));
+  svg.call(zoom);
+}
+
+// ── UPLOAD ─────────────────────────────────────────────────────
+function setupUpload() {
+  const z = document.getElementById("upzone");
+  const f = document.getElementById("finput");
+  z.addEventListener("click", () => f.click());
+  f.addEventListener("change", e => { if (e.target.files[0]) readFile(e.target.files[0]); f.value=""; });
+  z.addEventListener("dragover",  e => { e.preventDefault(); z.classList.add("ov"); });
+  z.addEventListener("dragleave", () => z.classList.remove("ov"));
+  z.addEventListener("drop", e => {
+    e.preventDefault(); z.classList.remove("ov");
+    if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+  });
+}
+
+function readFile(file) {
+  const rd = new FileReader();
+  rd.onload = e => {
+    const {zips, blanks, total} = parseZips(e.target.result);
+    pZips   = zips;
+    pBlanks = blanks;
+    pName   = file.name.replace(/\.[^.]+$/, "");
+    document.getElementById("mname").value = pName;
+    document.getElementById("mpreview-sub").textContent = `${total.toLocaleString()} rows in "${file.name}"`;
+    document.getElementById("mpreview").innerHTML =
+      `<strong>${zips.length.toLocaleString()}</strong> rows with ZIP codes<br>` +
+      (blanks > 0
+        ? `<span class="unk">⚠ ${blanks.toLocaleString()} rows with blank / unknown ZIP</span>`
+        : `<span style="color:#41693D">✓ No blank ZIP rows</span>`);
+    openModal();
+  };
+  rd.readAsText(file);
+}
+
+function parseZips(txt) {
+  // Normalize ALL line endings (Windows \r\n, old Mac \r, Unix \n)
+  const lines = txt.replace(/\r\n/g,"\n").replace(/\r/g,"\n").split("\n");
+  const zipRe = /\b(\d{5})(?:-\d{4})?\b/;
+  const zips = [];
+  let blanks = 0, total = 0, seenHeader = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!seenHeader) {
+      seenHeader = true;
+      if (/^(zip|zipcode|postal|code|zip_code|zip code)$/i.test(line) || (!/\d/.test(line) && line.length > 0))
+        continue; // skip header
+    }
+    total++;
+    if (line === "") { blanks++; continue; }
+    const m = line.match(zipRe);
+    if (m) zips.push(m[1].padStart(5,"0"));
+    else   blanks++;
+  }
+  return {zips, blanks, total};
+}
+
+// ── MODAL ──────────────────────────────────────────────────────
+function openModal()  { document.getElementById("mbg").style.display = "flex"; }
+function closeModal() { document.getElementById("mbg").style.display = "none"; pZips = null; pBlanks = 0; }
+
+async function confirmDs() {
+  const name   = document.getElementById("mname").value.trim() || `Dataset ${datasets.length+1}`;
+  const blanks = pBlanks, zips = pZips;
+  closeModal();
+  if (!zips || !zips.length) { alert("No valid ZIP codes found."); return; }
+
+  setLoad(true);
+  stat(`Resolving ${zips.length.toLocaleString()} ZIPs…`);
+  await new Promise(r => setTimeout(r, 20));
+
+  const {points, unresolved} = resolveZips(zips);
+
+  if (!points.length) {
+    setLoad(false);
+    const notWI = zips.filter(z => !z.startsWith("5")).length;
+    let msg = "Could not geocode any ZIP codes.\n\n";
+    if (notWI > 0 && !geoData) {
+      msg += `${notWI} ZIPs appear to be outside Wisconsin. The built-in database covers WI ZIPs — run afp_setup.py once to enable full US coverage.`;
+    } else {
+      msg += "Check internet connection or run afp_setup.py for offline support.";
+    }
+    alert(msg);
+    return;
+  }
+
+  const theme = THEMES[datasets.length % THEMES.length];
+  datasets.push({
+    id: Date.now(), name, theme,
+    total: zips.length + blanks,
+    zipCount: zips.length, blanks, unresolved,
+    points,
+    states: [...new Set(points.map(p=>p.state).filter(Boolean))],
+    visible: true,
+  });
+
+  document.getElementById("empty").style.display = "none";
+  renderAll(); updateStats(); renderDsList(); renderUnknowns();
+  setLoad(false);
+  const sk = blanks + unresolved;
+  stat(`"${name}" — ${points.length.toLocaleString()} ZIPs mapped${sk?`, ${sk} skipped`:""}`, 4000);
+}
+
+// ── GEOCODE ────────────────────────────────────────────────────
+function resolveZips(zips) {
+  const freq = {};
+  for (const z of zips) freq[z] = (freq[z]||0)+1;
+  const points = []; let unresolved = 0;
+  for (const [zip, cnt] of Object.entries(freq)) {
+    const info = zipDB[zip];
+    if (!info) { unresolved += cnt; continue; }
+    const lat = Array.isArray(info) ? info[0] : parseFloat(info.latitude || info.lat);
+    const lng = Array.isArray(info) ? info[1] : parseFloat(info.longitude || info.lon || info.lng);
+    if (isNaN(lat) || isNaN(lng)) { unresolved += cnt; continue; }
+    const city  = Array.isArray(info) ? info[2] : (info.city||"");
+    const state = Array.isArray(info) ? info[3] : (info.state_abbreviation || info.state || guessState(zip));
+    points.push({zip, lat, lng, city, state, count: cnt});
+  }
+  return {points, unresolved};
+}
+
+function guessState(z) {
+  const n = parseInt(z);
+  const map=[[35000,36999,"AL"],[99500,99999,"AK"],[85000,86999,"AZ"],[71600,72999,"AR"],[90000,96699,"CA"],[80000,81999,"CO"],[6000,6999,"CT"],[19700,19999,"DE"],[32000,34999,"FL"],[30000,31999,"GA"],[96700,96899,"HI"],[83200,83999,"ID"],[60000,62999,"IL"],[46000,47999,"IN"],[50000,52999,"IA"],[66000,67999,"KS"],[40000,42999,"KY"],[70000,71499,"LA"],[3900,4999,"ME"],[20600,21999,"MD"],[1000,2799,"MA"],[48000,49999,"MI"],[55000,56999,"MN"],[38600,39999,"MS"],[63000,65999,"MO"],[59000,59999,"MT"],[68000,69999,"NE"],[88900,89999,"NV"],[3000,3899,"NH"],[7000,8999,"NJ"],[87000,88499,"NM"],[10000,14999,"NY"],[27000,28999,"NC"],[58000,58999,"ND"],[43000,45999,"OH"],[73000,74999,"OK"],[97000,97999,"OR"],[15000,19699,"PA"],[2800,2999,"RI"],[29000,29999,"SC"],[57000,57999,"SD"],[37000,38599,"TN"],[73301,79999,"TX"],[84000,84999,"UT"],[5000,5999,"VT"],[22000,24699,"VA"],[98000,99499,"WA"],[24700,26999,"WV"],[53000,54999,"WI"],[82000,83199,"WY"]];
+  for (const [a,b,s] of map) if(n>=a&&n<=b) return s;
+  return "";
+}
+
+// ── RENDER MAP ─────────────────────────────────────────────────
+function renderAll() {
+  if (!geoData) {
+    // No map data yet — show dots only on a placeholder background
+    renderDotsOnly();
+    return;
+  }
+  const vis = datasets.filter(d=>d.visible);
+  if (!vis.length) { clearMap(); return; }
+
+  const allPts  = vis.flatMap(d=>d.points);
+  const allAbbr = [...new Set(allPts.map(p=>p.state).filter(Boolean))];
+
+  const stFeat = topojson.feature(geoData, geoData.objects.states).features;
+  const relSt  = stFeat.filter(f => allAbbr.includes(FIPS[(f.id||"").toString().padStart(2,"0")]));
+  if (!relSt.length) return;
+
+  const W = document.getElementById("mapa").clientWidth;
+  const H = document.getElementById("mapa").clientHeight;
+  proj = d3.geoAlbersUsa().fitExtent([[50,50],[W-50,H-50]], {type:"FeatureCollection",features:relSt});
+  gp   = d3.geoPath().projection(proj);
+
+  const gst = d3.select("#gst"); gst.selectAll("*").remove();
+  gst.selectAll("path.sf").data(relSt).join("path")
+    .attr("class","sf sfill").attr("d",gp)
+    .on("mouseover",(ev,f)=>{const ab=FIPS[(f.id||"").toString().padStart(2,"0")]; tipShow(ev,`<strong>${NAMES[ab]||ab}</strong>`);})
+    .on("mousemove",tipMove).on("mouseout",tipHide);
+  gst.selectAll("path.so").data(relSt).join("path")
+    .attr("class","so sout").attr("d",gp)
+    .style("stroke-width", relSt.length===1 ? "1.6px" : "1px");
+
+  d3.select("#gco").selectAll("*").remove();
+  if (showCounties && countyData) {
+    const cFeat = topojson.feature(countyData, countyData.objects.counties).features
+      .filter(f => allAbbr.includes(FIPS[(Math.floor(f.id/1000)).toString().padStart(2,"0")]));
+    d3.select("#gco").selectAll("path").data(cFeat).join("path").attr("class","cline").attr("d",gp);
+  }
+
+  const hg = d3.select("#gheat"); hg.selectAll("*").remove();
+  const lg = d3.select("#glbl");  lg.selectAll("*").remove();
+  d3.select("#svgdefs").selectAll("*").remove();
+
+  const radius  = +document.getElementById("rr").value;
+  const opacity = +document.getElementById("ro").value / 100;
+
+  vis.forEach(ds => {
+    const cnts   = ds.points.map(p=>p.count);
+    const cMin   = Math.min(...cnts), cMax = Math.max(...cnts);
+    const cScale = d3.scaleSequential().domain([cMin,cMax]).interpolator(d3.interpolateRgbBasis(ds.theme.grad));
+    const rScale = d3.scaleSqrt().domain([cMin,cMax]).range([radius*.35, radius*1.7]);
+
+    ds.points.forEach(pt => {
+      const xy = proj([pt.lng, pt.lat]); if (!xy) return;
+      const [x,y] = xy, r = rScale(pt.count), col = cScale(pt.count);
+      const gid = `g${ds.id}_${pt.zip}`;
+      const gr = d3.select("#svgdefs").append("radialGradient")
+        .attr("id",gid).attr("cx","50%").attr("cy","50%").attr("r","50%");
+      gr.append("stop").attr("offset","0%"  ).attr("stop-color",col).attr("stop-opacity",opacity);
+      gr.append("stop").attr("offset","65%" ).attr("stop-color",col).attr("stop-opacity",opacity*.45);
+      gr.append("stop").attr("offset","100%").attr("stop-color",col).attr("stop-opacity",0);
+
+      hg.append("circle").attr("cx",x).attr("cy",y).attr("r",r)
+        .style("fill",`url(#${gid})`).style("cursor","pointer")
+        .on("mouseover",ev=>{tipShow(ev,`<strong>${pt.city?pt.city+", ":""}${pt.state} ${pt.zip}</strong>${pt.count.toLocaleString()} entr${pt.count===1?"y":"ies"}<br><span style="opacity:.7">${ds.name}</span>`); d3.select(ev.currentTarget).attr("r",r*1.12);})
+        .on("mousemove",tipMove).on("mouseout",ev=>{tipHide(); d3.select(ev.currentTarget).attr("r",r);});
+
+      if (showLabels && pt.count > 1) {
+        const fs = Math.max(5, Math.min(11, r*.52));
+        lg.append("text").attr("x",x).attr("y",y).attr("text-anchor","middle").attr("dominant-baseline","middle")
+          .attr("font-size",fs).attr("font-family","Barlow,sans-serif").attr("font-weight","700")
+          .attr("fill","rgba(255,255,255,.9)").style("pointer-events","none")
+          .text(pt.count>=10000?`${(pt.count/1000).toFixed(0)}k`:pt.count>=1000?`${(pt.count/1000).toFixed(1)}k`:pt.count);
+      }
+    });
+  });
+  renderLegend(vis);
+  svg.transition().duration(550).call(zoom.transform, d3.zoomIdentity);
+}
+
+function renderDotsOnly() {
+  // Fallback: plot dots using raw lat/lng when no map tiles available
+  const vis = datasets.filter(d=>d.visible);
+  if (!vis.length) return;
+  const allPts = vis.flatMap(d=>d.points);
+  if (!allPts.length) return;
+
+  const W = document.getElementById("mapa").clientWidth;
+  const H = document.getElementById("mapa").clientHeight;
+
+  const lons = allPts.map(p=>p.lng), lats = allPts.map(p=>p.lat);
+  const lonMin=Math.min(...lons), lonMax=Math.max(...lons);
+  const latMin=Math.min(...lats), latMax=Math.max(...lats);
+
+  const pad = 60;
+  const scX = d3.scaleLinear().domain([lonMin,lonMax]).range([pad,W-pad]);
+  const scY = d3.scaleLinear().domain([latMax,latMin]).range([pad,H-pad]);
+
+  proj = ([lng,lat]) => [scX(lng), scY(lat)];
+  gp   = null;
+
+  d3.select("#gst").selectAll("*").remove();
+  d3.select("#gco").selectAll("*").remove();
+  const hg = d3.select("#gheat"); hg.selectAll("*").remove();
+  const lg = d3.select("#glbl");  lg.selectAll("*").remove();
+  d3.select("#svgdefs").selectAll("*").remove();
+
+  const radius  = +document.getElementById("rr").value;
+  const opacity = +document.getElementById("ro").value / 100;
+
+  vis.forEach(ds => {
+    const cnts   = ds.points.map(p=>p.count);
+    const cMin   = Math.min(...cnts), cMax = Math.max(...cnts);
+    const cScale = d3.scaleSequential().domain([cMin,cMax]).interpolator(d3.interpolateRgbBasis(ds.theme.grad));
+    const rScale = d3.scaleSqrt().domain([cMin,cMax]).range([radius*.35, radius*1.7]);
+
+    ds.points.forEach(pt => {
+      const [x,y] = proj([pt.lng, pt.lat]);
+      const r = rScale(pt.count), col = cScale(pt.count);
+      const gid = `g${ds.id}_${pt.zip}`;
+      const gr = d3.select("#svgdefs").append("radialGradient")
+        .attr("id",gid).attr("cx","50%").attr("cy","50%").attr("r","50%");
+      gr.append("stop").attr("offset","0%"  ).attr("stop-color",col).attr("stop-opacity",opacity);
+      gr.append("stop").attr("offset","65%" ).attr("stop-color",col).attr("stop-opacity",opacity*.45);
+      gr.append("stop").attr("offset","100%").attr("stop-color",col).attr("stop-opacity",0);
+
+      hg.append("circle").attr("cx",x).attr("cy",y).attr("r",r)
+        .style("fill",`url(#${gid})`).style("cursor","pointer")
+        .on("mouseover",ev=>{tipShow(ev,`<strong>${pt.city?pt.city+", ":""}${pt.state} ${pt.zip}</strong>${pt.count.toLocaleString()} entr${pt.count===1?"y":"ies"}<br><span style="opacity:.7">${ds.name}</span>`); d3.select(ev.currentTarget).attr("r",r*1.12);})
+        .on("mousemove",tipMove).on("mouseout",ev=>{tipHide(); d3.select(ev.currentTarget).attr("r",r);});
+
+      if (showLabels && pt.count > 1) {
+        const fs = Math.max(5, Math.min(11, r*.52));
+        lg.append("text").attr("x",x).attr("y",y).attr("text-anchor","middle").attr("dominant-baseline","middle")
+          .attr("font-size",fs).attr("font-family","Barlow,sans-serif").attr("font-weight","700")
+          .attr("fill","rgba(255,255,255,.9)").style("pointer-events","none")
+          .text(pt.count>=10000?`${(pt.count/1000).toFixed(0)}k`:pt.count>=1000?`${(pt.count/1000).toFixed(1)}k`:pt.count);
+      }
+    });
+  });
+  renderLegend(vis);
+  svg.transition().duration(550).call(zoom.transform, d3.zoomIdentity);
+}
+
+function clearMap() {
+  ["#gst","#gco","#gheat","#glbl"].forEach(id=>d3.select(id).selectAll("*").remove());
+  d3.select("#svgdefs").selectAll("*").remove();
+}
+
+function renderLegend(vis) {
+  const wrap=document.getElementById("lgwrap"), items=document.getElementById("lgitems");
+  items.innerHTML="";
+  if (!vis.length) { wrap.style.display="none"; return; }
+  wrap.style.display="block";
+  vis.forEach(ds=>{
+    const id=`lg${ds.id}`, li=document.createElement("div");
+    li.className="lgitem";
+    li.innerHTML=`<svg width="52" height="9" style="border-radius:5px;overflow:hidden;flex-shrink:0"><defs><linearGradient id="${id}">${ds.theme.grad.map((c,i)=>`<stop offset="${i*50}%" stop-color="${c}"/>`).join("")}</linearGradient></defs><rect width="52" height="9" fill="url(#${id})"/></svg><span>${ds.name}</span>`;
+    items.appendChild(li);
+  });
+}
+
+// ── DATASET LIST ───────────────────────────────────────────────
+function renderDsList() {
+  const list=document.getElementById("dslist"); list.innerHTML="";
+  if (!datasets.length) { list.innerHTML='<div class="ds-empty">No datasets loaded yet</div>'; return; }
+  datasets.forEach(ds=>{
+    const skipped=ds.blanks+ds.unresolved, c=document.createElement("div");
+    c.className=`dscard${ds.visible?" act":""}`;
+    c.id=`dsc${ds.id}`;
+    c.innerHTML=`<div class="dsr1"><div class="dsswatch" style="background:${ds.theme.mid}"></div><span class="dsname" title="${ds.name}">${ds.name}</span><span class="dsbadge">${ds.total.toLocaleString()}</span></div><div class="dsr2"><div class="togrow" onclick="togDs(${ds.id})"><div class="tog${ds.visible?" on":""}" id="dt${ds.id}"></div><span>Visible</span></div><button class="dsdel" onclick="delDs(${ds.id})">×</button></div><div class="dsinfo">${ds.states.join(", ")} · ${ds.points.length.toLocaleString()} unique ZIPs</div>${skipped>0?`<div class="unknown-badge">⚠ ${skipped.toLocaleString()} unknown / blank ZIPs</div>`:""}`;
+    list.appendChild(c);
+  });
+}
+
+function togDs(id) {
+  const ds=datasets.find(d=>d.id===id); if(!ds)return;
+  ds.visible=!ds.visible;
+  document.getElementById(`dt${id}`)?.classList.toggle("on",ds.visible);
+  document.getElementById(`dsc${id}`)?.classList.toggle("act",ds.visible);
+  renderAll(); updateStats();
+}
+function delDs(id) {
+  datasets=datasets.filter(d=>d.id!==id);
+  renderDsList(); updateStats(); renderAll(); renderUnknowns();
+  if (!datasets.length) document.getElementById("empty").style.display="block";
+}
+
+// ── UNKNOWN ZIPS ───────────────────────────────────────────────
+function renderUnknowns() {
+  const wrap=document.getElementById("unk-wrap"), rows=document.getElementById("unk-rows");
+  rows.innerHTML="";
+  const wu=datasets.filter(d=>(d.blanks+d.unresolved)>0);
+  if (!wu.length) { wrap.style.display="none"; return; }
+  wrap.style.display="block";
+  wu.forEach(ds=>{
+    const total=ds.blanks+ds.unresolved, row=document.createElement("div");
+    row.className="uc-row";
+    row.innerHTML=`<span class="uc-ds" title="${ds.name}">${ds.name}</span><span class="uc-cnt">${total.toLocaleString()}</span>`;
+    rows.appendChild(row);
+    if (ds.blanks>0 && ds.unresolved>0) {
+      const d2=document.createElement("div");
+      d2.style.cssText="font-size:10px;color:#7a5a00;padding:0 0 3px 0;";
+      d2.textContent=`${ds.blanks} blank, ${ds.unresolved} unrecognized`;
+      rows.appendChild(d2);
+    }
+  });
+}
+
+// ── STATS ──────────────────────────────────────────────────────
+function updateStats() {
+  const vis=datasets.filter(d=>d.visible).flatMap(d=>d.points);
+  const tot=datasets.reduce((s,d)=>s+d.total,0);
+  const sts=[...new Set(vis.map(p=>p.state).filter(Boolean))];
+  const pk=vis.length?Math.max(...vis.map(p=>p.count)):0;
+  document.getElementById("s-tot").textContent=tot?tot.toLocaleString():"—";
+  document.getElementById("s-sts").textContent=sts.length||"—";
+  document.getElementById("s-pk").textContent=pk?pk.toLocaleString():"—";
+  document.getElementById("s-ds").textContent=datasets.length;
+}
+
+// ── SLIDERS / TOGGLES ──────────────────────────────────────────
+function setupSliders() {
+  const rr=document.getElementById("rr"), ro=document.getElementById("ro");
+  rr.addEventListener("input",()=>{document.getElementById("lrr").textContent=rr.value; renderAll();});
+  ro.addEventListener("input",()=>{document.getElementById("lro").textContent=ro.value+"%"; renderAll();});
+}
+function togLabels(el)  { el.classList.toggle("on"); showLabels=el.classList.contains("on"); renderAll(); }
+function togCounties(el){ el.classList.toggle("on"); showCounties=el.classList.contains("on"); renderAll(); }
+
+// ── ZOOM ───────────────────────────────────────────────────────
+function zIn()       { svg.transition().duration(300).call(zoom.scaleBy,1.6); }
+function zOut()      { svg.transition().duration(300).call(zoom.scaleBy,1/1.6); }
+function resetView() { svg.transition().duration(500).call(zoom.transform,d3.zoomIdentity); }
+
+// ── TOOLTIP ────────────────────────────────────────────────────
+const tipEl=document.getElementById("tip");
+function tipShow(ev,html){tipEl.innerHTML=html; tipEl.classList.add("show"); tipMove(ev);}
+function tipMove(ev){const r=document.getElementById("mapa").getBoundingClientRect(); let x=ev.clientX-r.left+14,y=ev.clientY-r.top-10; if(x+230>r.width)x=ev.clientX-r.left-220; if(y+90>r.height)y=ev.clientY-r.top-80; tipEl.style.left=x+"px"; tipEl.style.top=y+"px";}
+function tipHide(){tipEl.classList.remove("show");}
+
+// ── STATUS ─────────────────────────────────────────────────────
+let stT;
+function stat(msg,ms){const el=document.getElementById("status"); el.textContent=msg; el.classList.add("show"); if(stT)clearTimeout(stT); if(ms)stT=setTimeout(()=>el.classList.remove("show"),ms);}
+function setLoad(on){document.getElementById("loading").style.display=on?"flex":"none";}
+
+// ── EXPORT ─────────────────────────────────────────────────────
+function exportPNG(){
+  stat("Generating export…");
+  const el=document.getElementById("msvg");
+  const W=el.clientWidth, H=el.clientHeight;
+  const clone=el.cloneNode(true);
+  clone.setAttribute("xmlns","http://www.w3.org/2000/svg");
+  clone.setAttribute("width",W); clone.setAttribute("height",H);
+  const bg=document.createElementNS("http://www.w3.org/2000/svg","rect");
+  bg.setAttribute("width",W); bg.setAttribute("height",H); bg.setAttribute("fill","#fff");
+  clone.insertBefore(bg,clone.firstChild);
+  const url="data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(clone))));
+  const img=new Image();
+  img.onload=()=>{
+    const cv=document.createElement("canvas"); cv.width=W*2; cv.height=H*2;
+    const ctx=cv.getContext("2d"); ctx.scale(2,2); ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H); ctx.drawImage(img,0,0);
+    const a=document.createElement("a"); a.download="afp-heatmap.png"; a.href=cv.toDataURL("image/png"); a.click();
+    stat("Saved ✓",2500);
+  };
+  img.onerror=()=>stat("Export failed",3000);
+  img.src=url;
+}
+
+init();
+</script>
+</body>
+</html>

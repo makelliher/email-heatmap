@@ -104,10 +104,21 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 .mpreview strong{color:var(--text);font-weight:600}
 .mpreview .unk{color:var(--gold-dk);font-weight:600}
 /* OFFLINE BANNER */
-#offline-banner{background:#fff8e1;border-bottom:2px solid var(--gold);padding:7px 16px;font-size:11.5px;color:#7a5a00;display:flex;align-items:center;gap:8px;flex-shrink:0}
-#offline-banner.hidden{display:none}
-#offline-banner strong{font-weight:700}
-#offline-banner a{color:var(--green);font-weight:600;cursor:pointer;text-decoration:underline}
+/* STATE FILTER */
+.state-grid{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.stchk{display:flex;align-items:center;gap:4px;background:#fff;border:1.5px solid var(--border);border-radius:5px;padding:3px 7px;cursor:pointer;transition:all .15s;user-select:none;font-size:11px;font-weight:600;color:var(--muted)}
+.stchk:hover{border-color:var(--green-mid);color:var(--green)}
+.stchk.active{background:var(--green);border-color:var(--green);color:#fff}
+.stchk input{display:none}
+/* COUNTY CHART */
+.county-chart{margin-top:4px}
+.cc-row{margin-bottom:7px}
+.cc-label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
+.cc-name{font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
+.cc-pct{font-family:'Barlow Condensed',sans-serif;font-weight:700;color:var(--green);font-size:12px}
+.cc-bar-bg{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.cc-bar{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--green-lt),var(--green));transition:width .4s ease}
+.cc-empty{font-size:11.5px;color:var(--muted);text-align:center;padding:8px 0}
 </style>
 </head>
 <body>
@@ -118,11 +129,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
     <p>Americans for Prosperity · Data Visualization</p>
   </div>
 </header>
-
-<div id="offline-banner" class="hidden">
-  ⚠ <span><strong>Offline map data not available.</strong> To run fully offline, run <code>python3 afp_setup.py</code> once.
-  Currently loading map from internet — <a onclick="document.getElementById('offline-banner').classList.add('hidden')">dismiss</a></span>
-</div>
 
 <div class="layout">
   <div class="sidebar">
@@ -136,6 +142,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
         <input type="file" id="finput" accept=".txt,.csv,.tsv">
       </div>
       <div class="fmt">.txt, .csv, or .tsv — one ZIP per line, or ZIP column in spreadsheet export. Blank rows counted as "unknown."</div>
+
+      <div id="stfilter-wrap" style="display:none">
+        <div class="slabel">Filter States</div>
+        <div class="state-grid" id="state-grid"></div>
+      </div>
+
       <div class="slabel">Summary</div>
       <div class="sgrid">
         <div class="scard"><div class="sval" id="s-tot">—</div><div class="slbl2">Total Rows</div></div>
@@ -149,6 +161,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
           <div id="unk-rows"></div>
         </div>
       </div>
+
+      <div id="county-wrap" style="display:none">
+        <div class="slabel">Top 5 Counties</div>
+        <div class="county-chart" id="county-chart"></div>
+      </div>
+
       <div class="slabel">Display Options</div>
       <div class="ctrl"><label>Heatmap radius</label><input type="range" id="rr" min="6" max="70" value="28"><span class="vl" id="lrr">28</span></div>
       <div class="ctrl"><label>Opacity</label><input type="range" id="ro" min="15" max="100" value="68"><span class="vl" id="lro">68%</span></div>
@@ -254,7 +272,6 @@ async function loadData() {
   const zipOk = await loadFullZips();
 
   if (!geoOk || !zipOk) {
-    document.getElementById("offline-banner").classList.remove("hidden");
     stat("Using built-in data. Run afp_setup.py for full offline support.", 6000);
   } else {
     stat("All data loaded ✓", 2500);
@@ -410,8 +427,11 @@ async function confirmDs() {
   });
 
   document.getElementById("empty").style.display = "none";
-  renderAll(); updateStats(); renderDsList(); renderUnknowns();
+  renderAll(); updateStats(); renderDsList(); renderUnknowns(); renderStateFilter();
   setLoad(false);
+  // Build county map after projection settles
+  zipCountyMap = {}; // reset so new ZIPs get looked up
+  setTimeout(async () => { await buildZipCountyMap(); renderCountyChart(); }, 800);
   const sk = blanks + unresolved;
   stat(`"${name}" — ${points.length.toLocaleString()} ZIPs mapped${sk?`, ${sk} skipped`:""}`, 4000);
 }
@@ -451,7 +471,8 @@ function renderAll() {
   const vis = datasets.filter(d=>d.visible);
   if (!vis.length) { clearMap(); return; }
 
-  const allPts  = vis.flatMap(d=>d.points);
+  const allPts  = vis.flatMap(d=>d.points).filter(p=>!hiddenStates.has(p.state));
+  if (!allPts.length) { clearMap(); return; }
   const allAbbr = [...new Set(allPts.map(p=>p.state).filter(Boolean))];
 
   const stFeat = topojson.feature(geoData, geoData.objects.states).features;
@@ -492,10 +513,7 @@ function renderAll() {
     const cScale = d3.scaleSequential().domain([cMin,cMax]).interpolator(d3.interpolateRgbBasis(ds.theme.grad));
     const rScale = d3.scaleSqrt().domain([cMin,cMax]).range([radius*.35, radius*1.7]);
 
-    ds.points.forEach(pt => {
-      const xy = proj([pt.lng, pt.lat]); if (!xy) return;
-      const [x,y] = xy, r = rScale(pt.count), col = cScale(pt.count);
-      const gid = `g${ds.id}_${pt.zip}`;
+    ds.points.filter(p=>!hiddenStates.has(p.state)).forEach(pt => {
       const gr = d3.select("#svgdefs").append("radialGradient")
         .attr("id",gid).attr("cx","50%").attr("cy","50%").attr("r","50%");
       gr.append("stop").attr("offset","0%"  ).attr("stop-color",col).attr("stop-opacity",opacity);
@@ -622,12 +640,113 @@ function togDs(id) {
   ds.visible=!ds.visible;
   document.getElementById(`dt${id}`)?.classList.toggle("on",ds.visible);
   document.getElementById(`dsc${id}`)?.classList.toggle("act",ds.visible);
-  renderAll(); updateStats();
+  renderAll(); updateStats(); renderCountyChart();
 }
 function delDs(id) {
   datasets=datasets.filter(d=>d.id!==id);
-  renderDsList(); updateStats(); renderAll(); renderUnknowns();
+  renderDsList(); updateStats(); renderAll(); renderUnknowns(); renderStateFilter(); renderCountyChart();
   if (!datasets.length) document.getElementById("empty").style.display="block";
+}
+
+// ── STATE FILTER ───────────────────────────────────────────────
+let hiddenStates = new Set();
+
+function renderStateFilter() {
+  const wrap = document.getElementById("stfilter-wrap");
+  const grid = document.getElementById("state-grid");
+  const allStates = [...new Set(datasets.flatMap(d=>d.points.map(p=>p.state)).filter(Boolean))].sort();
+  if (allStates.length <= 1) { wrap.style.display="none"; return; }
+  wrap.style.display = "block";
+  grid.innerHTML = "";
+  allStates.forEach(st => {
+    const active = !hiddenStates.has(st);
+    const btn = document.createElement("div");
+    btn.className = `stchk${active?" active":""}`;
+    btn.textContent = st;
+    btn.title = NAMES[st] || st;
+    btn.onclick = () => {
+      if (hiddenStates.has(st)) hiddenStates.delete(st);
+      else hiddenStates.add(st);
+      renderStateFilter();
+      renderAll();
+      updateStats();
+      renderCountyChart();
+    };
+    grid.appendChild(btn);
+  });
+}
+
+// ── COUNTY CHART ───────────────────────────────────────────────
+// ZIP → county name lookup built lazily from us-atlas county data
+let zipCountyMap = {};
+let countyMapBuilt = false;
+
+async function buildZipCountyMap() {
+  if (!countyData || Object.keys(zipCountyMap).length > 0) return;
+  // Build a simple lookup: for each point in our datasets, find which county it belongs to
+  // using point-in-polygon via d3.geoContains
+  if (!proj) return;
+  const countyFeatures = topojson.feature(countyData, countyData.objects.counties).features;
+  const allPts = datasets.flatMap(d=>d.points);
+  for (const pt of allPts) {
+    if (zipCountyMap[pt.zip]) continue;
+    for (const cf of countyFeatures) {
+      if (d3.geoContains(cf, [pt.lng, pt.lat])) {
+        // County name from id: fips code, use a simple name map or just the state+fips
+        zipCountyMap[pt.zip] = cf.properties?.name || `County ${cf.id}`;
+        break;
+      }
+    }
+  }
+}
+
+function renderCountyChart() {
+  const wrap  = document.getElementById("county-wrap");
+  const chart = document.getElementById("county-chart");
+  const vis   = datasets.filter(d=>d.visible).flatMap(d=>d.points)
+                  .filter(p => !hiddenStates.has(p.state));
+  if (!vis.length) { wrap.style.display="none"; return; }
+
+  // Count by county using zipCountyMap (may be partial if not built yet)
+  const counts = {};
+  let total = 0;
+  for (const pt of vis) {
+    const county = zipCountyMap[pt.zip];
+    if (!county) continue;
+    const key = `${county}, ${pt.state}`;
+    counts[key] = (counts[key]||0) + pt.count;
+    total += pt.count;
+  }
+
+  const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  if (!sorted.length) { wrap.style.display="none"; return; }
+
+  wrap.style.display = "block";
+  chart.innerHTML = "";
+  const maxVal = sorted[0][1];
+  sorted.forEach(([name, cnt]) => {
+    const pct = total > 0 ? ((cnt/total)*100).toFixed(1) : 0;
+    const barW = maxVal > 0 ? ((cnt/maxVal)*100).toFixed(1) : 0;
+    const row = document.createElement("div");
+    row.className = "cc-row";
+    row.innerHTML = `
+      <div class="cc-label">
+        <span class="cc-name" title="${name}">${name}</span>
+        <span class="cc-pct">${pct}%</span>
+      </div>
+      <div class="cc-bar-bg"><div class="cc-bar" style="width:${barW}%"></div></div>`;
+    chart.appendChild(row);
+  });
+}
+
+// Trigger county map build after render completes
+function renderAllAndCounty() {
+  renderAll();
+  // Build county map after projection is set, then render chart
+  setTimeout(async () => {
+    await buildZipCountyMap();
+    renderCountyChart();
+  }, 600);
 }
 
 // ── UNKNOWN ZIPS ───────────────────────────────────────────────
@@ -653,7 +772,7 @@ function renderUnknowns() {
 
 // ── STATS ──────────────────────────────────────────────────────
 function updateStats() {
-  const vis=datasets.filter(d=>d.visible).flatMap(d=>d.points);
+  const vis=datasets.filter(d=>d.visible).flatMap(d=>d.points).filter(p=>!hiddenStates.has(p.state));
   const tot=datasets.reduce((s,d)=>s+d.total,0);
   const sts=[...new Set(vis.map(p=>p.state).filter(Boolean))];
   const pk=vis.length?Math.max(...vis.map(p=>p.count)):0;

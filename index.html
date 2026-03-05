@@ -152,7 +152,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
       <div class="slabel">Display Options</div>
       <div class="ctrl"><label>Heatmap radius</label><input type="range" id="rr" min="6" max="70" value="28"><span class="vl" id="lrr">28</span></div>
       <div class="ctrl"><label>Opacity</label><input type="range" id="ro" min="15" max="100" value="68"><span class="vl" id="lro">68%</span></div>
-      <div class="ctrl"><label>Count labels</label><div class="tog on" id="tl" onclick="togLabels(this)"></div></div>
+      <div class="ctrl"><label>Count labels</label><div class="tog" id="tl" onclick="togLabels(this)"></div></div>
       <div class="ctrl"><label>County outlines</label><div class="tog" id="tc" onclick="togCounties(this)"></div></div>
       <div id="lgwrap" style="display:none">
         <div class="slabel">Legend</div>
@@ -221,7 +221,8 @@ const NAMES = {"AL":"Alabama","AK":"Alaska","AZ":"Arizona","AR":"Arkansas","CA":
 
 let zipDB = {}, geoData = null, countyData = null;
 let datasets = [], pZips = null, pBlanks = 0, pName = "";
-let showLabels = true, showCounties = false;
+let showLabels = false, showCounties = false;
+let currentZoomScale = 1;
 let svg, g, zoom, proj, gp;
 
 // ── INIT ───────────────────────────────────────────────────────
@@ -305,7 +306,11 @@ async function loadFullZips() {
 function initSVG() {
   svg  = d3.select("#msvg");
   g    = d3.select("#mg");
-  zoom = d3.zoom().scaleExtent([.3,60]).on("zoom", e => g.attr("transform", e.transform));
+  zoom = d3.zoom().scaleExtent([.3,60]).on("zoom", e => {
+    g.attr("transform", e.transform);
+    currentZoomScale = e.transform.k;
+    updateHeatmapScale(e.transform.k);
+  });
   svg.call(zoom);
 }
 
@@ -497,10 +502,11 @@ function renderAll() {
       gr.append("stop").attr("offset","65%" ).attr("stop-color",col).attr("stop-opacity",opacity*.45);
       gr.append("stop").attr("offset","100%").attr("stop-color",col).attr("stop-opacity",0);
 
-      hg.append("circle").attr("cx",x).attr("cy",y).attr("r",r)
+      const initR = r / currentZoomScale;
+      hg.append("circle").attr("cx",x).attr("cy",y).attr("r",initR).attr("data-r",r)
         .style("fill",`url(#${gid})`).style("cursor","pointer")
-        .on("mouseover",ev=>{tipShow(ev,`<strong>${pt.city?pt.city+", ":""}${pt.state} ${pt.zip}</strong>${pt.count.toLocaleString()} entr${pt.count===1?"y":"ies"}<br><span style="opacity:.7">${ds.name}</span>`); d3.select(ev.currentTarget).attr("r",r*1.12);})
-        .on("mousemove",tipMove).on("mouseout",ev=>{tipHide(); d3.select(ev.currentTarget).attr("r",r);});
+        .on("mouseover",ev=>{tipShow(ev,`<strong>${pt.city?pt.city+", ":""}${pt.state} ${pt.zip}</strong>${pt.count.toLocaleString()} entr${pt.count===1?"y":"ies"}<br><span style="opacity:.7">${ds.name}</span>`); d3.select(ev.currentTarget).attr("r",initR*1.12);})
+
 
       if (showLabels && pt.count > 1) {
         const fs = Math.max(5, Math.min(11, r*.52));
@@ -561,10 +567,11 @@ function renderDotsOnly() {
       gr.append("stop").attr("offset","65%" ).attr("stop-color",col).attr("stop-opacity",opacity*.45);
       gr.append("stop").attr("offset","100%").attr("stop-color",col).attr("stop-opacity",0);
 
-      hg.append("circle").attr("cx",x).attr("cy",y).attr("r",r)
+      const initR2 = r / currentZoomScale;
+      hg.append("circle").attr("cx",x).attr("cy",y).attr("r",initR2).attr("data-r",r)
         .style("fill",`url(#${gid})`).style("cursor","pointer")
-        .on("mouseover",ev=>{tipShow(ev,`<strong>${pt.city?pt.city+", ":""}${pt.state} ${pt.zip}</strong>${pt.count.toLocaleString()} entr${pt.count===1?"y":"ies"}<br><span style="opacity:.7">${ds.name}</span>`); d3.select(ev.currentTarget).attr("r",r*1.12);})
-        .on("mousemove",tipMove).on("mouseout",ev=>{tipHide(); d3.select(ev.currentTarget).attr("r",r);});
+        .on("mouseover",ev=>{tipShow(ev,`<strong>${pt.city?pt.city+", ":""}${pt.state} ${pt.zip}</strong>${pt.count.toLocaleString()} entr${pt.count===1?"y":"ies"}<br><span style="opacity:.7">${ds.name}</span>`); d3.select(ev.currentTarget).attr("r",initR2*1.12);})
+
 
       if (showLabels && pt.count > 1) {
         const fs = Math.max(5, Math.min(11, r*.52));
@@ -664,6 +671,23 @@ function setupSliders() {
 }
 function togLabels(el)  { el.classList.toggle("on"); showLabels=el.classList.contains("on"); renderAll(); }
 function togCounties(el){ el.classList.toggle("on"); showCounties=el.classList.contains("on"); renderAll(); }
+
+// Zoom-aware: shrink heatmap circles as user zooms in so detail emerges
+function updateHeatmapScale(k) {
+  // As zoom increases, circles shrink proportionally so they don't overlap
+  // At k=1 (default): scale=1. At k=4 (zoomed in): circles are 1/4 size in screen space = same geo size
+  const s = 1 / k;
+  d3.select("#gheat").selectAll("circle").each(function() {
+    const baseR = +d3.select(this).attr("data-r");
+    if (baseR) d3.select(this).attr("r", baseR * s);
+  });
+  d3.select("#glbl").selectAll("text").each(function() {
+    const bx = +d3.select(this).attr("data-x");
+    const by = +d3.select(this).attr("data-y");
+    // Hide labels when zoomed out, show when zoomed in enough
+    d3.select(this).style("display", (showLabels && k > 1.5) ? "" : "none");
+  });
+}
 
 // ── ZOOM ───────────────────────────────────────────────────────
 function zIn()       { svg.transition().duration(300).call(zoom.scaleBy,1.6); }
